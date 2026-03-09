@@ -15,6 +15,7 @@ import {
   Activity,
   ArrowUpRight,
   MessageSquare,
+  MoreHorizontal,
   Pause,
   Plus,
   Pencil,
@@ -37,6 +38,11 @@ import { DashboardShell } from "@/components/templates/DashboardShell";
 import { BoardChatComposer } from "@/components/BoardChatComposer";
 import { TaskCustomFieldsEditor } from "./TaskCustomFieldsEditor";
 import { Button } from "@/components/ui/button";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import {
   Dialog,
   DialogContent,
@@ -909,6 +915,7 @@ export default function BoardDetailPage() {
   const [isDeletingTask, setIsDeletingTask] = useState(false);
   const [deleteTaskError, setDeleteTaskError] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<"board" | "list">("board");
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isLiveFeedOpen, setIsLiveFeedOpen] = useState(false);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const isLiveFeedOpenRef = useRef(false);
@@ -3096,7 +3103,7 @@ export default function BoardDetailPage() {
         <DashboardSidebar />
         <main
           className={cn(
-            "flex-1 bg-gradient-to-br from-slate-50 to-slate-100",
+            "min-w-0 flex-1 bg-gradient-to-br from-slate-50 to-slate-100",
             isSidePanelOpen ? "overflow-hidden" : "overflow-y-auto",
           )}
         >
@@ -3117,11 +3124,12 @@ export default function BoardDetailPage() {
                     </div>
                   ) : null}
                 </div>
-                <div className="flex flex-wrap items-center gap-3">
+                <div className="flex items-center gap-2 sm:gap-3">
+                  {/* View toggle — always visible */}
                   <div className="flex items-center gap-1 rounded-lg bg-slate-100 p-1">
                     <button
                       className={cn(
-                        "rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
+                        "rounded-md px-2 py-1.5 text-xs font-medium transition-colors sm:px-3 sm:text-sm",
                         viewMode === "board"
                           ? "bg-slate-900 text-white"
                           : "text-slate-600 hover:bg-slate-200 hover:text-slate-900",
@@ -3132,7 +3140,7 @@ export default function BoardDetailPage() {
                     </button>
                     <button
                       className={cn(
-                        "rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
+                        "rounded-md px-2 py-1.5 text-xs font-medium transition-colors sm:px-3 sm:text-sm",
                         viewMode === "list"
                           ? "bg-slate-900 text-white"
                           : "text-slate-600 hover:bg-slate-200 hover:text-slate-900",
@@ -3142,6 +3150,7 @@ export default function BoardDetailPage() {
                       List
                     </button>
                   </div>
+                  {/* New task — always visible */}
                   <Button
                     onClick={() => setIsDialogOpen(true)}
                     className="h-9 w-9 p-0"
@@ -3151,6 +3160,7 @@ export default function BoardDetailPage() {
                   >
                     <Plus className="h-4 w-4" />
                   </Button>
+                  {/* Approvals — always visible (has badge) */}
                   <Button
                     variant="outline"
                     onClick={() => router.push(`/boards/${boardId}/approvals`)}
@@ -3165,6 +3175,7 @@ export default function BoardDetailPage() {
                       </span>
                     ) : null}
                   </Button>
+                  {/* Secondary buttons — visible on md+, hidden on mobile */}
                   {isOrgAdmin ? (
                     <Button
                       variant="outline"
@@ -3180,7 +3191,7 @@ export default function BoardDetailPage() {
                         !canWrite
                       }
                       className={cn(
-                        "h-9 w-9 p-0",
+                        "hidden h-9 w-9 p-0 md:inline-flex",
                         isAgentsPaused
                           ? "border-amber-200 bg-amber-50/60 text-amber-700 hover:border-amber-300 hover:bg-amber-50 hover:text-amber-800"
                           : "",
@@ -3206,7 +3217,7 @@ export default function BoardDetailPage() {
                   <Button
                     variant="outline"
                     onClick={openBoardChat}
-                    className="h-9 w-9 p-0"
+                    className="hidden h-9 w-9 p-0 md:inline-flex"
                     aria-label="Board chat"
                     title="Board chat"
                   >
@@ -3215,7 +3226,7 @@ export default function BoardDetailPage() {
                   <Button
                     variant="outline"
                     onClick={openLiveFeed}
-                    className="h-9 w-9 p-0"
+                    className="hidden h-9 w-9 p-0 md:inline-flex"
                     aria-label="Live feed"
                     title="Live feed"
                   >
@@ -3225,13 +3236,93 @@ export default function BoardDetailPage() {
                     <button
                       type="button"
                       onClick={() => router.push(`/boards/${boardId}/edit`)}
-                      className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-600 transition hover:border-slate-300 hover:bg-slate-50"
+                      className="hidden h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-600 transition hover:border-slate-300 hover:bg-slate-50 md:inline-flex"
                       aria-label="Board settings"
                       title="Board settings"
                     >
                       <Settings className="h-4 w-4" />
                     </button>
                   ) : null}
+                  {/* Mobile overflow menu — visible only on <md */}
+                  <Popover open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        className="h-9 w-9 p-0 md:hidden"
+                        aria-label="More actions"
+                      >
+                        <MoreHorizontal className="h-4 w-4" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent
+                      align="end"
+                      className="w-48 rounded-lg border border-slate-200 bg-white p-1 shadow-lg"
+                    >
+                      {isOrgAdmin ? (
+                        <button
+                          type="button"
+                          className={cn(
+                            "flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-slate-700 transition hover:bg-slate-100",
+                            isAgentsPaused && "text-amber-700",
+                          )}
+                          onClick={() => {
+                            setMobileMenuOpen(false);
+                            openAgentsControlDialog(
+                              isAgentsPaused ? "resume" : "pause",
+                            );
+                          }}
+                          disabled={
+                            !isSignedIn ||
+                            !boardId ||
+                            isAgentsControlSending ||
+                            !canWrite
+                          }
+                        >
+                          {isAgentsPaused ? (
+                            <Play className="h-4 w-4" />
+                          ) : (
+                            <Pause className="h-4 w-4" />
+                          )}
+                          {isAgentsPaused ? "Resume agents" : "Pause agents"}
+                        </button>
+                      ) : null}
+                      <button
+                        type="button"
+                        className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-slate-700 transition hover:bg-slate-100"
+                        onClick={() => {
+                          setMobileMenuOpen(false);
+                          openBoardChat();
+                        }}
+                      >
+                        <MessageSquare className="h-4 w-4" />
+                        Board chat
+                      </button>
+                      <button
+                        type="button"
+                        className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-slate-700 transition hover:bg-slate-100"
+                        onClick={() => {
+                          setMobileMenuOpen(false);
+                          openLiveFeed();
+                        }}
+                      >
+                        <Activity className="h-4 w-4" />
+                        Live feed
+                      </button>
+                      {isOrgAdmin ? (
+                        <button
+                          type="button"
+                          className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-slate-700 transition hover:bg-slate-100"
+                          onClick={() => {
+                            setMobileMenuOpen(false);
+                            router.push(`/boards/${boardId}/edit`);
+                          }}
+                        >
+                          <Settings className="h-4 w-4" />
+                          Board settings
+                        </button>
+                      ) : null}
+                    </PopoverContent>
+                  </Popover>
                 </div>
               </div>
             </div>
@@ -3680,21 +3771,21 @@ export default function BoardDetailPage() {
       ) : null}
       <aside
         className={cn(
-          "fixed right-0 top-0 z-50 h-full w-full max-w-[99vw] transform bg-white shadow-2xl transition-transform md:w-[max(760px,45vw)]",
+          "fixed right-0 top-0 z-50 h-full w-[calc(100%-3rem)] max-w-[99vw] transform bg-white shadow-2xl transition-transform sm:w-[calc(100%-2rem)] md:w-[max(760px,45vw)]",
           isDetailOpen ? "transform-none" : "translate-x-full",
         )}
       >
         <div className="flex h-full flex-col">
-          <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3 md:px-6 md:py-4">
-            <div>
+          <div className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-200 bg-white px-4 py-3 md:px-6 md:py-4">
+            <div className="min-w-0 flex-1">
               <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
                 Task detail
               </p>
-              <p className="mt-1 text-sm font-medium text-slate-900">
+              <p className="mt-1 truncate text-sm font-medium text-slate-900">
                 {selectedTask?.title ?? "Task"}
               </p>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="ml-2 flex flex-shrink-0 items-center gap-2">
               <button
                 type="button"
                 onClick={() => setIsEditDialogOpen(true)}
@@ -3707,9 +3798,10 @@ export default function BoardDetailPage() {
               <button
                 type="button"
                 onClick={closeComments}
-                className="rounded-lg border border-slate-200 p-2 text-slate-500 transition hover:bg-slate-50"
+                className="rounded-lg border border-slate-200 bg-slate-50 p-2 text-slate-600 transition hover:bg-slate-100 md:bg-transparent"
+                aria-label="Close task detail"
               >
-                <X className="h-4 w-4" />
+                <X className="h-5 w-5 md:h-4 md:w-4" />
               </button>
             </div>
           </div>
@@ -3993,13 +4085,13 @@ export default function BoardDetailPage() {
 
       <aside
         className={cn(
-          "fixed right-0 top-0 z-50 h-full w-full max-w-[96vw] transform border-l border-slate-200 bg-white shadow-2xl transition-transform md:w-[560px]",
+          "fixed right-0 top-0 z-50 h-full w-[calc(100%-3rem)] max-w-[96vw] transform border-l border-slate-200 bg-white shadow-2xl transition-transform sm:w-[calc(100%-2rem)] md:w-[560px]",
           isChatOpen ? "transform-none" : "translate-x-full",
         )}
       >
         <div className="flex h-full flex-col">
-          <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3 md:px-6 md:py-4">
-            <div>
+          <div className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-200 bg-white px-4 py-3 md:px-6 md:py-4">
+            <div className="min-w-0 flex-1">
               <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
                 Board chat
               </p>
@@ -4010,10 +4102,10 @@ export default function BoardDetailPage() {
             <button
               type="button"
               onClick={closeBoardChat}
-              className="rounded-lg border border-slate-200 p-2 text-slate-500 transition hover:bg-slate-50"
+              className="ml-2 flex-shrink-0 rounded-lg border border-slate-200 bg-slate-50 p-2 text-slate-600 transition hover:bg-slate-100 md:bg-transparent"
               aria-label="Close board chat"
             >
-              <X className="h-4 w-4" />
+              <X className="h-5 w-5 md:h-4 md:w-4" />
             </button>
           </div>
           <div className="flex flex-1 flex-col overflow-hidden px-6 py-4">
@@ -4055,13 +4147,13 @@ export default function BoardDetailPage() {
 
       <aside
         className={cn(
-          "fixed right-0 top-0 z-50 h-full w-full max-w-[96vw] transform border-l border-slate-200 bg-white shadow-2xl transition-transform md:w-[520px]",
+          "fixed right-0 top-0 z-50 h-full w-[calc(100%-3rem)] max-w-[96vw] transform border-l border-slate-200 bg-white shadow-2xl transition-transform sm:w-[calc(100%-2rem)] md:w-[520px]",
           isLiveFeedOpen ? "transform-none" : "translate-x-full",
         )}
       >
         <div className="flex h-full flex-col">
-          <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3 md:px-6 md:py-4">
-            <div>
+          <div className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-200 bg-white px-4 py-3 md:px-6 md:py-4">
+            <div className="min-w-0 flex-1">
               <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
                 Live feed
               </p>
@@ -4072,10 +4164,10 @@ export default function BoardDetailPage() {
             <button
               type="button"
               onClick={closeLiveFeed}
-              className="rounded-lg border border-slate-200 p-2 text-slate-500 transition hover:bg-slate-50"
+              className="ml-2 flex-shrink-0 rounded-lg border border-slate-200 bg-slate-50 p-2 text-slate-600 transition hover:bg-slate-100 md:bg-transparent"
               aria-label="Close live feed"
             >
-              <X className="h-4 w-4" />
+              <X className="h-5 w-5 md:h-4 md:w-4" />
             </button>
           </div>
           <div className="flex-1 overflow-y-auto px-6 py-4">

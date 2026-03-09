@@ -37,9 +37,9 @@ const displayFont = DM_Serif_Display({
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" className="overflow-x-hidden">
       <body
-        className={`${bodyFont.variable} ${headingFont.variable} ${displayFont.variable} min-h-screen bg-app text-strong antialiased`}
+        className={`${bodyFont.variable} ${headingFont.variable} ${displayFont.variable} min-h-screen w-full max-w-[100vw] overflow-x-hidden bg-app text-strong antialiased`}
       >
         <AuthProvider>
           <QueryProvider>
