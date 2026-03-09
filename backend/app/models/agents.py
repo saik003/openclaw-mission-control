@@ -3,14 +3,17 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import UUID, uuid4
 
 from sqlalchemy import JSON, Column, Text
-from sqlmodel import Field
+from sqlmodel import Field, Session, select
 
 from app.core.time import utcnow
 from app.models.base import QueryModel
+
+if TYPE_CHECKING:
+    from app.models.agent_boards import AgentBoard
 
 RUNTIME_ANNOTATION_TYPES = (datetime,)
 
@@ -51,3 +54,44 @@ class Agent(QueryModel, table=True):
     is_board_lead: bool = Field(default=False, index=True)
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)
+
+    # --- M2M helpers (agent_boards) ---
+
+    def get_board_links(self, session: Session) -> list[AgentBoard]:
+        """Return all AgentBoard rows for this agent."""
+        from app.models.agent_boards import AgentBoard
+
+        stmt = select(AgentBoard).where(AgentBoard.agent_id == self.id)
+        return list(session.exec(stmt).all())
+
+    def get_board_ids(self, session: Session) -> list[UUID]:
+        """Return all board UUIDs this agent is assigned to."""
+        return [link.board_id for link in self.get_board_links(session)]
+
+    def get_primary_board_id(self, session: Session) -> UUID | None:
+        """Return the primary board UUID, falling back to legacy board_id."""
+        from app.models.agent_boards import AgentBoard
+
+        stmt = (
+            select(AgentBoard)
+            .where(AgentBoard.agent_id == self.id, AgentBoard.is_primary.is_(True))
+        )
+        link = session.exec(stmt).first()
+        if link:
+            return link.board_id
+        # Fallback to legacy column during dual-write phase
+        return self.board_id
+
+    def is_lead_on(self, board_id: UUID, session: Session) -> bool:
+        """Check if this agent is lead on a specific board."""
+        from app.models.agent_boards import AgentBoard
+
+        stmt = (
+            select(AgentBoard)
+            .where(
+                AgentBoard.agent_id == self.id,
+                AgentBoard.board_id == board_id,
+                AgentBoard.role == "lead",
+            )
+        )
+        return session.exec(stmt).first() is not None

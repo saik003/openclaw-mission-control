@@ -19,6 +19,7 @@ import {
   pillCell,
 } from "@/components/tables/cell-formatters";
 import { truncateText as truncate } from "@/lib/formatters";
+import { agentBoardIds, agentPrimaryBoardId } from "@/lib/agent-helpers";
 
 type AgentsTableEmptyState = {
   title: string;
@@ -126,19 +127,38 @@ export function AgentsTable({
         ),
       },
       {
+        id: "boards",
         accessorKey: "board_id",
-        header: "Board",
+        header: "Board(s)",
         cell: ({ row }) => {
-          const boardId = row.original.board_id;
-          if (!boardId) {
+          const ids = agentBoardIds(row.original);
+          const primaryId = agentPrimaryBoardId(row.original);
+          if (ids.length === 0) {
             return <span className="text-sm text-slate-700">—</span>;
           }
-          const boardName = boardNameById.get(boardId) ?? boardId;
-          return linkifyCell({
-            href: `/boards/${boardId}`,
-            label: boardName,
-            block: false,
-          });
+          if (ids.length === 1) {
+            const boardName = boardNameById.get(ids[0]) ?? ids[0];
+            return linkifyCell({
+              href: `/boards/${ids[0]}`,
+              label: boardName,
+              block: false,
+            });
+          }
+          // Multiple boards — show primary first, then count
+          const primaryName = primaryId
+            ? (boardNameById.get(primaryId) ?? primaryId)
+            : (boardNameById.get(ids[0]) ?? ids[0]);
+          const primaryHref = `/boards/${primaryId ?? ids[0]}`;
+          return (
+            <span className="flex items-center gap-1 text-sm">
+              {linkifyCell({
+                href: primaryHref,
+                label: primaryName,
+                block: false,
+              })}
+              <span className="text-xs text-slate-500">+{ids.length - 1}</span>
+            </span>
+          );
         },
       },
       {

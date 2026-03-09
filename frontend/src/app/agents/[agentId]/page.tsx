@@ -27,6 +27,7 @@ import {
   formatTimestamp,
 } from "@/lib/formatters";
 import { useOrganizationMembership } from "@/lib/use-organization-membership";
+import { agentBoardIds, agentPrimaryBoardId } from "@/lib/agent-helpers";
 import type {
   ActivityEventRead,
   AgentRead,
@@ -36,6 +37,7 @@ import { Markdown } from "@/components/atoms/Markdown";
 import { StatusPill } from "@/components/atoms/StatusPill";
 import { DashboardSidebar } from "@/components/organisms/DashboardSidebar";
 import { DashboardShell } from "@/components/templates/DashboardShell";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -111,10 +113,12 @@ export default function AgentDetailPage() {
     if (!agent) return [];
     return events.filter((event) => event.agent_id === agent.id);
   }, [events, agent]);
-  const linkedBoard =
-    !agent?.board_id || agent?.is_gateway_main
-      ? null
-      : (boards.find((board) => board.id === agent.board_id) ?? null);
+  const linkedBoards = useMemo(() => {
+    if (!agent || agent.is_gateway_main) return [];
+    const ids = agentBoardIds(agent);
+    return boards.filter((board) => ids.includes(board.id));
+  }, [agent, boards]);
+  const linkedBoard = linkedBoards.length > 0 ? linkedBoards[0] : null;
 
   const deleteMutation = useDeleteAgentApiV1AgentsAgentIdDelete<ApiError>({
     mutation: {
@@ -246,19 +250,43 @@ export default function AgentDetailPage() {
                       </div>
                       <div>
                         <p className="text-xs font-semibold uppercase tracking-[0.2em] text-quiet">
-                          Board
+                          Board{linkedBoards.length > 1 ? "s" : ""}
+                          {linkedBoards.length > 1 ? (
+                            <Badge variant="accent" className="ml-2 text-[10px] px-1.5 py-0">
+                              {linkedBoards.length}
+                            </Badge>
+                          ) : null}
                         </p>
                         {agent.is_gateway_main ? (
                           <p className="mt-1 text-sm text-strong">
                             Gateway main (no board)
                           </p>
-                        ) : linkedBoard ? (
-                          <Link
-                            href={`/boards/${linkedBoard.id}`}
-                            className="mt-1 inline-flex text-sm font-medium text-[color:var(--accent)] transition hover:underline"
-                          >
-                            {linkedBoard.name}
-                          </Link>
+                        ) : linkedBoards.length > 0 ? (
+                          <div className="mt-1 flex flex-wrap gap-1.5">
+                            {linkedBoards.map((board) => {
+                              const isPrimary = agentPrimaryBoardId(agent) === board.id;
+                              return (
+                                <Link
+                                  key={board.id}
+                                  href={`/boards/${board.id}`}
+                                  className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium transition hover:underline"
+                                  style={{
+                                    backgroundColor: isPrimary
+                                      ? "var(--accent-soft, rgba(59,130,246,0.1))"
+                                      : "var(--surface-muted, #f1f5f9)",
+                                    color: isPrimary
+                                      ? "var(--accent-strong, #2563eb)"
+                                      : "var(--text-muted, #475569)",
+                                  }}
+                                >
+                                  {isPrimary ? "★ " : ""}{board.name}
+                                  {agent.is_board_lead && isPrimary ? (
+                                    <span className="text-[10px] opacity-70">(lead)</span>
+                                  ) : null}
+                                </Link>
+                              );
+                            })}
+                          </div>
                         ) : (
                           <p className="mt-1 text-sm text-strong">—</p>
                         )}

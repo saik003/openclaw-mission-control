@@ -124,11 +124,40 @@ class AgentBase(SQLModel):
 
 
 class AgentCreate(AgentBase):
-    """Payload for creating a new agent."""
+    """Payload for creating a new agent.
+
+    Accepts either legacy ``board_id`` (single UUID) or ``board_ids`` (list).
+    If ``board_id`` is provided and ``board_ids`` is not, the value is
+    automatically promoted to ``board_ids=[board_id]``.
+    """
+
+    board_ids: list[UUID] | None = Field(
+        default=None,
+        description="Board UUIDs this agent should be assigned to (M2M).",
+    )
+
+    @field_validator("board_ids", mode="before")
+    @classmethod
+    def _coerce_board_ids(cls, v: object) -> object:
+        """Accept a single UUID string/object and wrap it in a list."""
+        if isinstance(v, (str, UUID)):
+            return [v]
+        return v
+
+    def resolved_board_ids(self) -> list[UUID]:
+        """Return the definitive board list, merging legacy board_id."""
+        if self.board_ids:
+            return self.board_ids
+        if self.board_id is not None:
+            return [self.board_id]
+        return []
 
 
 class AgentUpdate(SQLModel):
-    """Payload for patching an existing agent."""
+    """Payload for patching an existing agent.
+
+    Supports both legacy ``board_id`` and M2M ``board_ids`` / ``primary_board_id``.
+    """
 
     model_config = SQLModelConfig(
         json_schema_extra={
@@ -153,8 +182,16 @@ class AgentUpdate(SQLModel):
 
     board_id: UUID | None = Field(
         default=None,
-        description="Optional new board assignment.",
+        description="Legacy single-board assignment (retrocompat). Prefer board_ids.",
         examples=["22222222-2222-2222-2222-222222222222"],
+    )
+    board_ids: list[UUID] | None = Field(
+        default=None,
+        description="Full set of board assignments (replaces current set when provided).",
+    )
+    primary_board_id: UUID | None = Field(
+        default=None,
+        description="Which board to mark as primary. Must be in board_ids if provided.",
     )
     is_gateway_main: bool | None = Field(
         default=None,
@@ -213,7 +250,11 @@ class AgentUpdate(SQLModel):
 
 
 class AgentRead(AgentBase):
-    """Public agent representation returned by the API."""
+    """Public agent representation returned by the API.
+
+    Includes both legacy ``board_id`` / ``is_board_lead`` (retrocompat) and
+    the new M2M fields ``board_ids`` and ``primary_board_id``.
+    """
 
     model_config = SQLModelConfig(
         json_schema_extra={
@@ -230,11 +271,20 @@ class AgentRead(AgentBase):
     gateway_id: UUID = Field(description="Gateway UUID that manages this agent.")
     is_board_lead: bool = Field(
         default=False,
-        description="Whether this agent is the board lead.",
+        description="Whether this agent is the board lead (legacy, prefer board roles).",
     )
     is_gateway_main: bool = Field(
         default=False,
         description="Whether this agent is the primary gateway agent.",
+    )
+    # --- M2M fields ---
+    board_ids: list[UUID] = Field(
+        default_factory=list,
+        description="All board UUIDs this agent is assigned to.",
+    )
+    primary_board_id: UUID | None = Field(
+        default=None,
+        description="The primary board UUID for this agent.",
     )
     openclaw_session_id: str | None = Field(
         default=None,

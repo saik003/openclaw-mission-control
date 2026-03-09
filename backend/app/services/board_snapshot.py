@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlmodel import col, select
 
+from app.models.agent_boards import AgentBoard
 from app.models.agents import Agent
 from app.models.approvals import Approval
 from app.models.board_memory import BoardMemory
@@ -116,13 +117,37 @@ async def build_board_snapshot(session: AsyncSession, board: Board) -> BoardSnap
         dependency_ids=list({*all_dependency_ids}),
     )
 
-    agents = (
-        await Agent.objects.filter_by(board_id=board.id)
-        .order_by(col(Agent.created_at).desc())
-        .all(session)
+    # Query agents via agent_boards M2M with fallback to legacy Agent.board_id
+    agents = list(
+        await session.exec(
+            select(Agent)
+            .where(
+                or_(
+                    col(Agent.id).in_(
+                        select(AgentBoard.agent_id).where(AgentBoard.board_id == board.id)
+                    ),
+                    col(Agent.board_id) == board.id,
+                ),
+            )
+            .order_by(col(Agent.created_at).desc())
+        ),
     )
+    # Load M2M board links for serialization
+    agent_ids = [agent.id for agent in agents]
+    bulk_links: dict[UUID, list[AgentBoard]] = {}
+    if agent_ids:
+        link_rows = list(
+            await session.exec(
+                select(AgentBoard).where(col(AgentBoard.agent_id).in_(agent_ids))
+            ),
+        )
+        for row in link_rows:
+            bulk_links.setdefault(row.agent_id, []).append(row)
     agent_reads = [
-        AgentLifecycleService.to_agent_read(AgentLifecycleService.with_computed_status(agent))
+        AgentLifecycleService.to_agent_read(
+            AgentLifecycleService.with_computed_status(agent),
+            board_links=bulk_links.get(agent.id),
+        )
         for agent in agents
     ]
     agent_name_by_id = {agent.id: agent.name for agent in agents}

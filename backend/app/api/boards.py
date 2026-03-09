@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Literal, cast
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlmodel import col, select
 
 from app.api.deps import (
@@ -24,6 +24,7 @@ from app.core.time import utcnow
 from app.db import crud
 from app.db.pagination import paginate
 from app.db.session import get_session
+from app.models.agent_boards import AgentBoard
 from app.models.agents import Agent
 from app.models.board_groups import BoardGroup
 from app.models.boards import Board
@@ -272,7 +273,21 @@ async def _notify_agents_on_board_group_change(
     board_ids = list(board_by_id.keys())
     if not board_ids:
         return
-    agents = await Agent.objects.by_field_in("board_id", board_ids).all(session)
+    # Query agents via agent_boards M2M with fallback to legacy Agent.board_id
+    agents = list(
+        await session.exec(
+            select(Agent).where(
+                or_(
+                    col(Agent.id).in_(
+                        select(AgentBoard.agent_id).where(
+                            col(AgentBoard.board_id).in_(board_ids)
+                        )
+                    ),
+                    col(Agent.board_id).in_(board_ids),
+                ),
+            )
+        ),
+    )
     if not agents:
         return
 
@@ -310,6 +325,21 @@ async def _notify_agents_on_board_group_change(
         for recipient_board_id, recipient_board in board_by_id.items()
     }
 
+    # Build agent → board_ids mapping via M2M with legacy fallback
+    agent_ids = [a.id for a in agents]
+    agent_board_links: dict[UUID, set[UUID]] = {}
+    if agent_ids:
+        link_rows = list(
+            await session.exec(
+                select(AgentBoard).where(col(AgentBoard.agent_id).in_(agent_ids))
+            ),
+        )
+        for link in link_rows:
+            agent_board_links.setdefault(link.agent_id, set()).add(link.board_id)
+    for agent in agents:
+        if agent.id not in agent_board_links and agent.board_id is not None:
+            agent_board_links.setdefault(agent.id, set()).add(agent.board_id)
+
     notified = 0
     failed = 0
     skipped_missing_session = 0
@@ -319,12 +349,18 @@ async def _notify_agents_on_board_group_change(
         if not agent.openclaw_session_id:
             skipped_missing_session += 1
             continue
-        if agent.board_id is None:
+        agent_bids = agent_board_links.get(agent.id, set())
+        # Find the first matching board in the group
+        matched_board_id = next(
+            (bid for bid in agent_bids if bid in board_by_id),
+            None,
+        )
+        if matched_board_id is None:
             skipped_missing_board += 1
             continue
-        config = config_by_board_id.get(agent.board_id)
-        message = message_by_board_id.get(agent.board_id)
-        recipient_board = board_by_id.get(agent.board_id)
+        config = config_by_board_id.get(matched_board_id)
+        message = message_by_board_id.get(matched_board_id)
+        recipient_board = board_by_id.get(matched_board_id)
         if config is None or message is None or recipient_board is None:
             skipped_missing_config += 1
             continue
@@ -415,11 +451,22 @@ async def _notify_lead_on_board_update(
 ) -> None:
     if not changed_fields:
         return
+    # Find lead agent via agent_boards M2M with fallback to legacy
     lead = (
-        await Agent.objects.filter_by(board_id=board.id)
-        .filter(col(Agent.is_board_lead).is_(True))
-        .first(session)
-    )
+        await session.exec(
+            select(Agent)
+            .join(AgentBoard, col(AgentBoard.agent_id) == col(Agent.id))
+            .where(AgentBoard.board_id == board.id)
+            .where(AgentBoard.role == "lead")
+        )
+    ).first()
+    if lead is None:
+        # Fallback: legacy Agent.board_id + is_board_lead
+        lead = (
+            await Agent.objects.filter_by(board_id=board.id)
+            .filter(col(Agent.is_board_lead).is_(True))
+            .first(session)
+        )
     if lead is None or not lead.openclaw_session_id:
         return
     dispatch = GatewayDispatchService(session)

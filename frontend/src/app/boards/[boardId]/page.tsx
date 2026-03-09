@@ -126,6 +126,7 @@ import {
 } from "@/lib/display-name";
 import { AGENT_EMOJI_GLYPHS } from "@/lib/agent-emoji";
 import { cn } from "@/lib/utils";
+import { isAgentOnBoard } from "@/lib/agent-helpers";
 import { usePageActive } from "@/hooks/usePageActive";
 import {
   boardCustomFieldValues,
@@ -2137,7 +2138,7 @@ export default function BoardDetailPage() {
   const assigneeById = useMemo(() => {
     const map = new Map<string, string>();
     agents
-      .filter((agent) => !boardId || agent.board_id === boardId)
+      .filter((agent) => !boardId || isAgentOnBoard(agent, boardId))
       .forEach((agent) => {
         map.set(agent.id, agent.name);
       });

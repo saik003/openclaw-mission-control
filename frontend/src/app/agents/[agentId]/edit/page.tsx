@@ -21,9 +21,10 @@ import type { AgentRead, AgentUpdate, BoardRead } from "@/api/generated/model";
 import { DashboardPageLayout } from "@/components/templates/DashboardPageLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import SearchableSelect, {
-  type SearchableSelectOption,
-} from "@/components/ui/searchable-select";
+import {
+  BoardMultiSelect,
+  type BoardOption,
+} from "@/components/ui/board-multi-select";
 import {
   Select,
   SelectContent,
@@ -33,6 +34,7 @@ import {
 } from "@/components/ui/select";
 import { AGENT_EMOJI_OPTIONS } from "@/lib/agent-emoji";
 import { DEFAULT_IDENTITY_PROFILE } from "@/lib/agent-templates";
+import { agentBoardIds, agentPrimaryBoardId } from "@/lib/agent-helpers";
 
 type IdentityProfile = {
   role: string;
@@ -40,7 +42,7 @@ type IdentityProfile = {
   emoji: string;
 };
 
-const getBoardOptions = (boards: BoardRead[]): SearchableSelectOption[] =>
+const getBoardOptions = (boards: BoardRead[]): BoardOption[] =>
   boards.map((board) => ({
     value: board.id,
     label: board.name,
@@ -87,7 +89,8 @@ export default function EditAgentPage() {
   const agentId = Array.isArray(agentIdParam) ? agentIdParam[0] : agentIdParam;
 
   const [name, setName] = useState<string | undefined>(undefined);
-  const [boardId, setBoardId] = useState<string | undefined>(undefined);
+  const [selectedBoardIds, setSelectedBoardIds] = useState<string[] | undefined>(undefined);
+  const [primaryBoardId, setPrimaryBoardId] = useState<string | null | undefined>(undefined);
   const [isGatewayMain, setIsGatewayMain] = useState<boolean | undefined>(
     undefined,
   );
@@ -180,10 +183,18 @@ export default function EditAgentPage() {
   const resolvedHeartbeatEvery = heartbeatEvery ?? loadedHeartbeat.every;
   const resolvedIdentityProfile = identityProfile ?? loadedIdentityProfile;
 
-  const resolvedBoardId = useMemo(() => {
-    if (resolvedIsGatewayMain) return boardId ?? "";
-    return boardId ?? loadedAgent?.board_id ?? boards[0]?.id ?? "";
-  }, [boardId, boards, loadedAgent?.board_id, resolvedIsGatewayMain]);
+  const resolvedBoardIds = useMemo(() => {
+    if (resolvedIsGatewayMain) return selectedBoardIds ?? [];
+    if (selectedBoardIds !== undefined) return selectedBoardIds;
+    if (loadedAgent) return agentBoardIds(loadedAgent);
+    return boards.length > 0 ? [boards[0].id] : [];
+  }, [selectedBoardIds, boards, loadedAgent, resolvedIsGatewayMain]);
+
+  const resolvedPrimaryBoardId = useMemo(() => {
+    if (primaryBoardId !== undefined) return primaryBoardId;
+    if (loadedAgent) return agentPrimaryBoardId(loadedAgent);
+    return resolvedBoardIds.length > 0 ? resolvedBoardIds[0] : null;
+  }, [primaryBoardId, loadedAgent, resolvedBoardIds]);
 
   const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -193,13 +204,13 @@ export default function EditAgentPage() {
       setError("Agent name is required.");
       return;
     }
-    if (!resolvedIsGatewayMain && !resolvedBoardId) {
-      setError("Select a board or mark this agent as the gateway main.");
+    if (!resolvedIsGatewayMain && resolvedBoardIds.length === 0) {
+      setError("Select at least one board or mark this agent as the gateway main.");
       return;
     }
     if (
       resolvedIsGatewayMain &&
-      !resolvedBoardId &&
+      resolvedBoardIds.length === 0 &&
       !loadedAgent.is_gateway_main &&
       !loadedAgent.board_id
     ) {
@@ -216,7 +227,9 @@ export default function EditAgentPage() {
         ? (loadedAgent.heartbeat_config as Record<string, unknown>)
         : {};
 
-    const payload: AgentUpdate = {
+    const resolvedPrimary = resolvedPrimaryBoardId ?? resolvedBoardIds[0] ?? null;
+
+    const payload: Record<string, unknown> = {
       name: trimmed,
       heartbeat_config: {
         ...existingHeartbeat,
@@ -226,22 +239,25 @@ export default function EditAgentPage() {
           typeof existingHeartbeat.includeReasoning === "boolean"
             ? existingHeartbeat.includeReasoning
             : false,
-      } as unknown as Record<string, unknown>,
+      },
       identity_profile: mergeIdentityProfile(
         loadedAgent.identity_profile,
         resolvedIdentityProfile,
-      ) as unknown as Record<string, unknown> | null,
+      ),
+      // M2M board assignment
+      board_ids: resolvedBoardIds,
+      primary_board_id: resolvedPrimary,
     };
     if (!resolvedIsGatewayMain) {
-      payload.board_id = resolvedBoardId || null;
-    } else if (resolvedBoardId) {
-      payload.board_id = resolvedBoardId;
+      payload.board_id = resolvedPrimary;
+    } else if (resolvedPrimary) {
+      payload.board_id = resolvedPrimary;
     }
     if (Boolean(loadedAgent.is_gateway_main) !== resolvedIsGatewayMain) {
       payload.is_gateway_main = resolvedIsGatewayMain;
     }
 
-    updateMutation.mutate({ agentId, params: { force: true }, data: payload });
+    updateMutation.mutate({ agentId, params: { force: true }, data: payload as AgentUpdate });
   };
 
   return (
@@ -296,45 +312,29 @@ export default function EditAgentPage() {
             </div>
             <div className="grid gap-6 md:grid-cols-2">
               <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <label className="text-sm font-medium text-slate-900">
-                    Board
-                    {resolvedIsGatewayMain ? (
-                      <span className="ml-2 text-xs font-normal text-slate-500">
-                        optional
-                      </span>
-                    ) : (
-                      <span className="text-red-500"> *</span>
-                    )}
-                  </label>
-                  {resolvedBoardId ? (
-                    <button
-                      type="button"
-                      className="text-xs font-medium text-slate-600 hover:text-slate-900"
-                      onClick={() => {
-                        setBoardId("");
-                      }}
-                      disabled={isLoading}
-                    >
-                      Clear board
-                    </button>
-                  ) : null}
-                </div>
-                <SearchableSelect
-                  ariaLabel="Select board"
-                  value={resolvedBoardId}
-                  onValueChange={(value) => setBoardId(value)}
+                <label className="text-sm font-medium text-slate-900">
+                  Boards
+                  {resolvedIsGatewayMain ? (
+                    <span className="ml-2 text-xs font-normal text-slate-500">
+                      optional
+                    </span>
+                  ) : (
+                    <span className="text-red-500"> *</span>
+                  )}
+                </label>
+                <BoardMultiSelect
                   options={getBoardOptions(boards)}
+                  selected={resolvedBoardIds}
+                  primaryId={resolvedPrimaryBoardId}
+                  onSelectedChange={setSelectedBoardIds}
+                  onPrimaryChange={setPrimaryBoardId}
                   placeholder={
                     resolvedIsGatewayMain
-                      ? "No board (main agent)"
-                      : "Select board"
+                      ? "No boards (main agent)"
+                      : "Select boards…"
                   }
-                  searchPlaceholder="Search boards..."
+                  searchPlaceholder="Search boards…"
                   emptyMessage="No matching boards."
-                  triggerClassName="w-full h-11 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-900 shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
-                  contentClassName="rounded-xl border border-slate-200 shadow-lg"
-                  itemClassName="px-4 py-3 text-sm text-slate-700 data-[selected=true]:bg-slate-50 data-[selected=true]:text-slate-900"
                   disabled={boards.length === 0}
                 />
                 {resolvedIsGatewayMain ? (

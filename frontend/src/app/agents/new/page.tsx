@@ -18,9 +18,10 @@ import type { BoardRead } from "@/api/generated/model";
 import { DashboardPageLayout } from "@/components/templates/DashboardPageLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import SearchableSelect, {
-  type SearchableSelectOption,
-} from "@/components/ui/searchable-select";
+import {
+  BoardMultiSelect,
+  type BoardOption,
+} from "@/components/ui/board-multi-select";
 import {
   Select,
   SelectContent,
@@ -37,7 +38,7 @@ type IdentityProfile = {
   emoji: string;
 };
 
-const getBoardOptions = (boards: BoardRead[]): SearchableSelectOption[] =>
+const getBoardOptions = (boards: BoardRead[]): BoardOption[] =>
   boards.map((board) => ({
     value: board.id,
     label: board.name,
@@ -62,7 +63,8 @@ export default function NewAgentPage() {
   const { isAdmin } = useOrganizationMembership(isSignedIn);
 
   const [name, setName] = useState("");
-  const [boardId, setBoardId] = useState<string>("");
+  const [selectedBoardIds, setSelectedBoardIds] = useState<string[]>([]);
+  const [primaryBoardId, setPrimaryBoardId] = useState<string | null>(null);
   const [heartbeatEvery, setHeartbeatEvery] = useState("10m");
   const [identityProfile, setIdentityProfile] = useState<IdentityProfile>({
     ...DEFAULT_IDENTITY_PROFILE,
@@ -94,7 +96,6 @@ export default function NewAgentPage() {
 
   const boards =
     boardsQuery.data?.status === 200 ? (boardsQuery.data.data.items ?? []) : [];
-  const displayBoardId = boardId || boards[0]?.id || "";
   const isLoading = boardsQuery.isLoading || createAgentMutation.isPending;
   const errorMessage = error ?? boardsQuery.error?.message ?? null;
 
@@ -106,16 +107,16 @@ export default function NewAgentPage() {
       setError("Agent name is required.");
       return;
     }
-    const resolvedBoardId = displayBoardId;
-    if (!resolvedBoardId) {
-      setError("Select a board before creating an agent.");
+    if (selectedBoardIds.length === 0) {
+      setError("Select at least one board before creating an agent.");
       return;
     }
     setError(null);
+    const resolvedPrimary = primaryBoardId ?? selectedBoardIds[0];
     createAgentMutation.mutate({
       data: {
         name: trimmed,
-        board_id: resolvedBoardId,
+        board_id: resolvedPrimary,
         heartbeat_config: {
           every: heartbeatEvery.trim() || "10m",
           target: "last",
@@ -124,6 +125,8 @@ export default function NewAgentPage() {
         identity_profile: normalizeIdentityProfile(
           identityProfile,
         ) as unknown as Record<string, unknown> | null,
+        // M2M board assignment fields (extend beyond generated type)
+        ...({ board_ids: selectedBoardIds, primary_board_id: resolvedPrimary } as Record<string, unknown>),
       },
     });
   };
@@ -181,19 +184,17 @@ export default function NewAgentPage() {
             <div className="grid gap-6 md:grid-cols-2">
               <div className="space-y-2">
                 <label className="text-sm font-medium text-slate-900">
-                  Board <span className="text-red-500">*</span>
+                  Boards <span className="text-red-500">*</span>
                 </label>
-                <SearchableSelect
-                  ariaLabel="Select board"
-                  value={displayBoardId}
-                  onValueChange={setBoardId}
+                <BoardMultiSelect
                   options={getBoardOptions(boards)}
-                  placeholder="Select board"
-                  searchPlaceholder="Search boards..."
+                  selected={selectedBoardIds}
+                  primaryId={primaryBoardId}
+                  onSelectedChange={setSelectedBoardIds}
+                  onPrimaryChange={setPrimaryBoardId}
+                  placeholder="Select boards…"
+                  searchPlaceholder="Search boards…"
                   emptyMessage="No matching boards."
-                  triggerClassName="w-full h-11 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-900 shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
-                  contentClassName="rounded-xl border border-slate-200 shadow-lg"
-                  itemClassName="px-4 py-3 text-sm text-slate-700 data-[selected=true]:bg-slate-50 data-[selected=true]:text-slate-900"
                   disabled={boards.length === 0}
                 />
                 {boards.length === 0 ? (

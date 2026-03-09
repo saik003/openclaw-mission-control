@@ -13,6 +13,8 @@ import type { AgentReadIdentityProfile } from "./agentReadIdentityProfile";
 export interface AgentRead {
   /** Board id that scopes this agent. Omit only when policy allows global agents. */
   board_id?: string | null;
+  /** All board ids this agent belongs to (many-to-many). */
+  board_ids?: string[];
   /** Creation timestamp. */
   created_at: string;
   /** Gateway UUID that manages this agent. */
@@ -36,6 +38,8 @@ export interface AgentRead {
    * @minLength 1
    */
   name: string;
+  /** Primary board id for this agent (null if unset). */
+  primary_board_id?: string | null;
   /** Optional openclaw session token. */
   openclaw_session_id?: string | null;
   /** Template representing deeper agent instructions. */

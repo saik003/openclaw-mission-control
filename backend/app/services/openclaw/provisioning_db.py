@@ -28,6 +28,7 @@ from app.db import crud
 from app.db.pagination import paginate
 from app.db.session import async_session_maker
 from app.models.activity_events import ActivityEvent
+from app.models.agent_boards import AgentBoard
 from app.models.agents import Agent
 from app.models.approvals import Approval
 from app.models.board_memory import BoardMemory
@@ -160,13 +161,24 @@ class OpenClawProvisioningService(OpenClawDBService):
         board = request.board
         config_options = request.options
 
+        # Primary lookup: agent_boards M2M table
         existing = (
             await self.session.exec(
                 select(Agent)
-                .where(Agent.board_id == board.id)
-                .where(col(Agent.is_board_lead).is_(True)),
+                .join(AgentBoard, col(AgentBoard.agent_id) == col(Agent.id))
+                .where(AgentBoard.board_id == board.id)
+                .where(AgentBoard.role == "lead"),
             )
         ).first()
+        # Fallback: legacy Agent.board_id + is_board_lead
+        if existing is None:
+            existing = (
+                await self.session.exec(
+                    select(Agent)
+                    .where(Agent.board_id == board.id)
+                    .where(col(Agent.is_board_lead).is_(True)),
+                )
+            ).first()
         if existing:
             desired_name = config_options.agent_name or self.lead_agent_name(board)
             changed = False
@@ -212,6 +224,16 @@ class OpenClawProvisioningService(OpenClawDBService):
         )
         raw_token = mint_agent_token(agent)
         await self.add_commit_refresh(agent)
+
+        # Dual-write: insert into agent_boards M2M table
+        agent_board = AgentBoard(
+            agent_id=agent.id,
+            board_id=board.id,
+            role="lead",
+            is_primary=True,
+        )
+        self.session.add(agent_board)
+        await self.session.commit()
 
         # Strict behavior: provisioning errors surface to the caller. The DB row exists
         # so a later retry can succeed with the same deterministic identity/session key.
@@ -843,11 +865,23 @@ class AgentLifecycleService(OpenClawDBService):
         return agent.board_id is None
 
     @classmethod
-    def to_agent_read(cls, agent: Agent) -> AgentRead:
+    def to_agent_read(
+        cls,
+        agent: Agent,
+        *,
+        board_links: list[AgentBoard] | None = None,
+    ) -> AgentRead:
         model = AgentRead.model_validate(agent, from_attributes=True)
-        return model.model_copy(
-            update={"is_gateway_main": cls.is_gateway_main(agent)},
-        )
+        update: dict[str, object] = {"is_gateway_main": cls.is_gateway_main(agent)}
+        if board_links:
+            update["board_ids"] = [link.board_id for link in board_links]
+            primary = next((link for link in board_links if link.is_primary), None)
+            update["primary_board_id"] = primary.board_id if primary else board_links[0].board_id
+        elif agent.board_id is not None:
+            # Fallback: legacy single board_id
+            update["board_ids"] = [agent.board_id]
+            update["primary_board_id"] = agent.board_id
+        return model.model_copy(update=update)
 
     @staticmethod
     def coerce_agent_items(items: Sequence[Any]) -> list[Agent]:
@@ -875,9 +909,32 @@ class AgentLifecycleService(OpenClawDBService):
             agent.status = "offline"
         return agent
 
+    async def load_board_links(self, agent_id: UUID) -> list[AgentBoard]:
+        """Load all AgentBoard rows for a given agent."""
+        statement = select(AgentBoard).where(AgentBoard.agent_id == agent_id)
+        return list(await self.session.exec(statement))
+
+    async def load_board_links_bulk(self, agent_ids: list[UUID]) -> dict[UUID, list[AgentBoard]]:
+        """Load AgentBoard rows for multiple agents, keyed by agent_id."""
+        if not agent_ids:
+            return {}
+        statement = select(AgentBoard).where(col(AgentBoard.agent_id).in_(agent_ids))
+        rows = list(await self.session.exec(statement))
+        result: dict[UUID, list[AgentBoard]] = {}
+        for row in rows:
+            result.setdefault(row.agent_id, []).append(row)
+        return result
+
     @classmethod
-    def serialize_agent(cls, agent: Agent) -> dict[str, object]:
-        return cls.to_agent_read(cls.with_computed_status(agent)).model_dump(mode="json")
+    def serialize_agent(
+        cls,
+        agent: Agent,
+        *,
+        board_links: list[AgentBoard] | None = None,
+    ) -> dict[str, object]:
+        return cls.to_agent_read(
+            cls.with_computed_status(agent), board_links=board_links,
+        ).model_dump(mode="json")
 
     async def fetch_agent_events(
         self,
@@ -886,7 +943,15 @@ class AgentLifecycleService(OpenClawDBService):
     ) -> list[Agent]:
         statement = select(Agent)
         if board_id:
-            statement = statement.where(col(Agent.board_id) == board_id)
+            # Primary: JOIN agent_boards; fallback via OR on legacy board_id
+            statement = statement.where(
+                or_(
+                    col(Agent.id).in_(
+                        select(AgentBoard.agent_id).where(AgentBoard.board_id == board_id)
+                    ),
+                    col(Agent.board_id) == board_id,
+                ),
+            )
         statement = statement.where(
             or_(
                 col(Agent.updated_at) >= since,
@@ -914,26 +979,65 @@ class AgentLifecycleService(OpenClawDBService):
         write: bool,
     ) -> None:
         if agent.board_id is None:
-            OpenClawAuthorizationPolicy.require_org_admin(is_admin=is_org_admin(ctx.member))
-            gateway = await self.get_main_agent_gateway(agent)
-            OpenClawAuthorizationPolicy.require_gateway_in_org(
-                gateway=gateway,
-                organization_id=ctx.organization.id,
-            )
-            return
+            # Check if agent has any board assignments via M2M
+            board_links = await self.load_board_links(agent.id)
+            if not board_links:
+                # Gateway-main agent: require org admin
+                OpenClawAuthorizationPolicy.require_org_admin(is_admin=is_org_admin(ctx.member))
+                gateway = await self.get_main_agent_gateway(agent)
+                OpenClawAuthorizationPolicy.require_gateway_in_org(
+                    gateway=gateway,
+                    organization_id=ctx.organization.id,
+                )
+                return
+            # Agent has M2M board links but legacy board_id is None — check any board
+            for link in board_links:
+                board = await Board.objects.by_id(link.board_id).first(self.session)
+                if board is None:
+                    continue
+                try:
+                    board = OpenClawAuthorizationPolicy.require_board_in_org(
+                        board=board,
+                        organization_id=ctx.organization.id,
+                    )
+                except HTTPException:
+                    continue
+                allowed = await has_board_access(
+                    self.session,
+                    member=ctx.member,
+                    board=board,
+                    write=write,
+                )
+                if allowed:
+                    return
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN)
 
-        board = await Board.objects.by_id(agent.board_id).first(self.session)
-        board = OpenClawAuthorizationPolicy.require_board_in_org(
-            board=board,
-            organization_id=ctx.organization.id,
-        )
-        allowed = await has_board_access(
-            self.session,
-            member=ctx.member,
-            board=board,
-            write=write,
-        )
-        OpenClawAuthorizationPolicy.require_board_write_access(allowed=allowed)
+        # Legacy path: check via Agent.board_id
+        board_links = await self.load_board_links(agent.id)
+        boards_to_check: list[UUID] = [link.board_id for link in board_links]
+        if not boards_to_check and agent.board_id is not None:
+            boards_to_check = [agent.board_id]
+
+        for bid in boards_to_check:
+            board = await Board.objects.by_id(bid).first(self.session)
+            if board is None:
+                continue
+            try:
+                board = OpenClawAuthorizationPolicy.require_board_in_org(
+                    board=board,
+                    organization_id=ctx.organization.id,
+                )
+            except HTTPException:
+                continue
+            allowed = await has_board_access(
+                self.session,
+                member=ctx.member,
+                board=board,
+                write=write,
+            )
+            if allowed:
+                return
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN)
 
     @staticmethod
     def record_heartbeat(session: AsyncSession, agent: Agent) -> None:
@@ -985,14 +1089,32 @@ class AgentLifecycleService(OpenClawDBService):
         *,
         board_id: UUID,
     ) -> int:
-        """Count board-scoped non-lead agents for spawn limit checks."""
-        statement = (
+        """Count board-scoped non-lead agents for spawn limit checks.
+
+        Uses agent_boards M2M table with fallback union from legacy Agent.board_id.
+        """
+        # Count via agent_boards (workers only)
+        m2m_statement = (
+            select(func.count(func.distinct(col(AgentBoard.agent_id))))
+            .where(AgentBoard.board_id == board_id)
+            .where(AgentBoard.role != "lead")
+        )
+        m2m_count = (await self.session.exec(m2m_statement)).one()
+
+        # Fallback: count agents with legacy board_id that have NO agent_boards entry
+        legacy_statement = (
             select(func.count(col(Agent.id)))
             .where(col(Agent.board_id) == board_id)
             .where(col(Agent.is_board_lead).is_(False))
+            .where(
+                ~col(Agent.id).in_(
+                    select(AgentBoard.agent_id).where(AgentBoard.board_id == board_id)
+                )
+            )
         )
-        count = (await self.session.exec(statement)).one()
-        return int(count or 0)
+        legacy_count = (await self.session.exec(legacy_statement)).one()
+
+        return int(m2m_count or 0) + int(legacy_count or 0)
 
     async def enforce_board_spawn_limit_for_lead(
         self,
@@ -1064,11 +1186,31 @@ class AgentLifecycleService(OpenClawDBService):
         self,
         *,
         data: dict[str, Any],
+        board_ids: list[UUID] | None = None,
+        is_lead: bool = False,
     ) -> tuple[Agent, str]:
+        # Remove board_ids/primary_board_id from data — not Agent model fields
+        data.pop("board_ids", None)
+        data.pop("primary_board_id", None)
         agent = Agent.model_validate(data)
         raw_token = mint_agent_token(agent)
         agent.openclaw_session_id = self.resolve_session_key(agent)
         await self.add_commit_refresh(agent)
+
+        # Dual-write: insert into agent_boards M2M table
+        effective_board_ids = board_ids or ([agent.board_id] if agent.board_id else [])
+        for i, bid in enumerate(effective_board_ids):
+            agent_board = AgentBoard(
+                agent_id=agent.id,
+                board_id=bid,
+                role="lead" if is_lead else "worker",
+                is_primary=(i == 0),
+            )
+            self.session.add(agent_board)
+        if effective_board_ids:
+            await self.session.commit()
+            await self.session.refresh(agent)
+
         return agent, raw_token
 
     async def _apply_gateway_provisioning(
@@ -1204,6 +1346,56 @@ class AgentLifecycleService(OpenClawDBService):
                 write=True,
             )
             OpenClawAuthorizationPolicy.require_board_write_access(allowed=allowed)
+        # Validate M2M board_ids if provided
+        if "board_ids" in updates and updates["board_ids"]:
+            for bid in updates["board_ids"]:
+                new_board = await self.require_board(bid)
+                OpenClawAuthorizationPolicy.require_board_in_org(
+                    board=new_board,
+                    organization_id=ctx.organization.id,
+                )
+                allowed = await has_board_access(
+                    self.session,
+                    member=ctx.member,
+                    board=new_board,
+                    write=True,
+                )
+                OpenClawAuthorizationPolicy.require_board_write_access(allowed=allowed)
+
+    async def _sync_agent_boards(
+        self,
+        *,
+        agent: Agent,
+        new_board_ids: list[UUID],
+        primary_board_id: UUID | None = None,
+        role: str = "worker",
+    ) -> None:
+        """Replace agent_boards entries and sync legacy Agent.board_id."""
+        # Remove existing entries
+        existing_links = await self.load_board_links(agent.id)
+        for link in existing_links:
+            await self.session.delete(link)
+
+        # Determine primary
+        if primary_board_id and primary_board_id in new_board_ids:
+            primary = primary_board_id
+        elif new_board_ids:
+            primary = new_board_ids[0]
+        else:
+            primary = None
+
+        # Insert new entries
+        for bid in new_board_ids:
+            agent_board = AgentBoard(
+                agent_id=agent.id,
+                board_id=bid,
+                role="lead" if agent.is_board_lead else role,
+                is_primary=(bid == primary),
+            )
+            self.session.add(agent_board)
+
+        # Dual-write: sync legacy Agent.board_id with primary board
+        agent.board_id = primary
 
     async def apply_agent_update_mutations(
         self,
@@ -1215,6 +1407,10 @@ class AgentLifecycleService(OpenClawDBService):
         main_gateway = await self.get_main_agent_gateway(agent)
         gateway_for_main: Gateway | None = None
 
+        # Extract M2M fields from updates before applying to Agent model
+        new_board_ids: list[UUID] | None = updates.pop("board_ids", None)
+        primary_board_id: UUID | None = updates.pop("primary_board_id", None)
+
         if make_main:
             board_source = updates.get("board_id") or agent.board_id
             board_for_main = await self.require_board(board_source)
@@ -1224,6 +1420,10 @@ class AgentLifecycleService(OpenClawDBService):
             agent.is_board_lead = False
             agent.openclaw_session_id = GatewayAgentIdentity.session_key(gateway_for_main)
             main_gateway = gateway_for_main
+            # Clear agent_boards when making gateway main
+            existing_links = await self.load_board_links(agent.id)
+            for link in existing_links:
+                await self.session.delete(link)
         elif make_main is not None:
             if "board_id" not in updates or updates["board_id"] is None:
                 raise HTTPException(
@@ -1265,6 +1465,22 @@ class AgentLifecycleService(OpenClawDBService):
                     detail="Board gateway_id is required",
                 )
             agent.gateway_id = board.gateway_id
+
+        # Sync M2M board assignments if board_ids was provided
+        if new_board_ids is not None and not make_main:
+            await self._sync_agent_boards(
+                agent=agent,
+                new_board_ids=new_board_ids,
+                primary_board_id=primary_board_id,
+            )
+        elif "board_id" in updates and updates.get("board_id") is not None and not make_main:
+            # Legacy board_id change — sync agent_boards to match
+            await self._sync_agent_boards(
+                agent=agent,
+                new_board_ids=[updates["board_id"]],
+                primary_board_id=updates["board_id"],
+            )
+
         agent.updated_at = utcnow()
         if agent.heartbeat_config is None:
             agent.heartbeat_config = DEFAULT_HEARTBEAT_CONFIG.copy()
@@ -1339,7 +1555,17 @@ class AgentLifecycleService(OpenClawDBService):
     def heartbeat_lookup_statement(payload: AgentHeartbeatCreate) -> SelectOfScalar[Agent]:
         statement = Agent.objects.filter_by(name=payload.name).statement
         if payload.board_id is not None:
-            statement = statement.where(Agent.board_id == payload.board_id)
+            # Match via agent_boards M2M OR legacy Agent.board_id
+            statement = statement.where(
+                or_(
+                    col(Agent.id).in_(
+                        select(AgentBoard.agent_id).where(
+                            AgentBoard.board_id == payload.board_id
+                        )
+                    ),
+                    Agent.board_id == payload.board_id,
+                ),
+            )
         return statement
 
     async def create_agent_from_heartbeat(
@@ -1366,7 +1592,10 @@ class AgentLifecycleService(OpenClawDBService):
             "gateway_id": gateway.id,
             "heartbeat_config": DEFAULT_HEARTBEAT_CONFIG.copy(),
         }
-        agent, raw_token = await self.persist_new_agent(data=data)
+        agent, raw_token = await self.persist_new_agent(
+            data=data,
+            board_ids=[board.id],
+        )
         await self.provision_new_agent(
             agent=agent,
             board=board,
@@ -1444,7 +1673,8 @@ class AgentLifecycleService(OpenClawDBService):
         self.session.add(agent)
         await self.session.commit()
         await self.session.refresh(agent)
-        return self.to_agent_read(self.with_computed_status(agent))
+        board_links = await self.load_board_links(agent.id)
+        return self.to_agent_read(self.with_computed_status(agent), board_links=board_links)
 
     async def list_agents(
         self,
@@ -1453,14 +1683,29 @@ class AgentLifecycleService(OpenClawDBService):
         gateway_id: UUID | None,
         ctx: OrganizationContext,
     ) -> LimitOffsetPage[AgentRead]:
-        board_ids = await list_accessible_board_ids(self.session, member=ctx.member, write=False)
+        accessible_board_ids = await list_accessible_board_ids(
+            self.session, member=ctx.member, write=False,
+        )
         if board_id is not None:
             OpenClawAuthorizationPolicy.require_board_write_access(
-                allowed=board_id in set(board_ids),
+                allowed=board_id in set(accessible_board_ids),
             )
+
+        # Subquery: agents that have agent_boards entries for accessible boards
+        m2m_agent_ids = (
+            select(AgentBoard.agent_id)
+            .where(col(AgentBoard.board_id).in_(accessible_board_ids))
+        ) if accessible_board_ids else None
+
         base_filters: list[ColumnElement[bool]] = []
-        if board_ids:
-            base_filters.append(col(Agent.board_id).in_(board_ids))
+        if accessible_board_ids:
+            # Include agents matching via M2M OR legacy board_id
+            m2m_filter = col(Agent.id).in_(m2m_agent_ids) if m2m_agent_ids else None
+            legacy_filter = col(Agent.board_id).in_(accessible_board_ids)
+            if m2m_filter is not None:
+                base_filters.append(or_(m2m_filter, legacy_filter))
+            else:
+                base_filters.append(legacy_filter)
         if is_org_admin(ctx.member):
             gateways = await Gateway.objects.filter_by(
                 organization_id=ctx.organization.id,
@@ -1477,8 +1722,17 @@ class AgentLifecycleService(OpenClawDBService):
                 statement = select(Agent).where(or_(*base_filters))
         else:
             statement = select(Agent).where(col(Agent.id).is_(None))
+
         if board_id is not None:
-            statement = statement.where(col(Agent.board_id) == board_id)
+            # Filter by specific board via M2M + legacy fallback
+            statement = statement.where(
+                or_(
+                    col(Agent.id).in_(
+                        select(AgentBoard.agent_id).where(AgentBoard.board_id == board_id)
+                    ),
+                    col(Agent.board_id) == board_id,
+                ),
+            )
         if gateway_id is not None:
             gateway = await Gateway.objects.by_id(gateway_id).first(self.session)
             if gateway is None or gateway.organization_id != ctx.organization.id:
@@ -1492,9 +1746,20 @@ class AgentLifecycleService(OpenClawDBService):
             )
         statement = statement.order_by(col(Agent.created_at).desc())
 
-        def _transform(items: Sequence[Any]) -> Sequence[Any]:
-            agents = self.coerce_agent_items(items)
-            return [self.to_agent_read(self.with_computed_status(agent)) for agent in agents]
+        # Capture self for use inside the async transformer
+        service = self
+
+        async def _transform(items: Sequence[Any]) -> Sequence[Any]:
+            agents = service.coerce_agent_items(items)
+            agent_ids = [a.id for a in agents]
+            bulk_links = await service.load_board_links_bulk(agent_ids)
+            return [
+                service.to_agent_read(
+                    service.with_computed_status(agent),
+                    board_links=bulk_links.get(agent.id),
+                )
+                for agent in agents
+            ]
 
         return await paginate(self.session, statement, transformer=_transform)
 
@@ -1528,13 +1793,32 @@ class AgentLifecycleService(OpenClawDBService):
                         )
                     elif allowed_ids:
                         agents = await stream_service.fetch_agent_events(None, last_seen)
-                        agents = [agent for agent in agents if agent.board_id in allowed_ids]
+                        # Filter by M2M board links OR legacy board_id
+                        filtered: list[Agent] = []
+                        for agent in agents:
+                            links = await stream_service.load_board_links(agent.id)
+                            agent_board_ids = {link.board_id for link in links}
+                            if not agent_board_ids and agent.board_id is not None:
+                                agent_board_ids = {agent.board_id}
+                            if agent_board_ids & allowed_ids:
+                                filtered.append(agent)
+                        agents = filtered
                     else:
                         agents = []
+                    # Load board links for serialization
+                    if agents:
+                        agent_ids = [a.id for a in agents]
+                        bulk_links = await stream_service.load_board_links_bulk(agent_ids)
+                    else:
+                        bulk_links = {}
                 for agent in agents:
                     updated_at = agent.updated_at or agent.last_seen_at or utcnow()
                     last_seen = max(updated_at, last_seen)
-                    payload = {"agent": self.serialize_agent(agent)}
+                    payload = {
+                        "agent": self.serialize_agent(
+                            agent, board_links=bulk_links.get(agent.id),
+                        ),
+                    }
                     yield {"event": "agent", "data": json.dumps(payload)}
                 await asyncio.sleep(2)
 
@@ -1554,6 +1838,7 @@ class AgentLifecycleService(OpenClawDBService):
         )
         payload = await self.coerce_agent_create_payload(payload, actor)
 
+        resolved_board_ids = payload.resolved_board_ids()
         board = await self.require_board(
             payload.board_id,
             user=actor.user if actor.actor_type == "user" else None,
@@ -1569,7 +1854,10 @@ class AgentLifecycleService(OpenClawDBService):
             gateway=gateway,
             requested_name=requested_name,
         )
-        agent, raw_token = await self.persist_new_agent(data=data)
+        agent, raw_token = await self.persist_new_agent(
+            data=data,
+            board_ids=resolved_board_ids or None,
+        )
         await self.provision_new_agent(
             agent=agent,
             board=board,
@@ -1579,7 +1867,8 @@ class AgentLifecycleService(OpenClawDBService):
             force_bootstrap=False,
         )
         self.logger.info("agent.create.success agent_id=%s board_id=%s", agent.id, board.id)
-        return self.to_agent_read(self.with_computed_status(agent))
+        board_links = await self.load_board_links(agent.id)
+        return self.to_agent_read(self.with_computed_status(agent), board_links=board_links)
 
     async def get_agent(
         self,
@@ -1591,7 +1880,8 @@ class AgentLifecycleService(OpenClawDBService):
         if agent is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
         await self.require_agent_access(agent=agent, ctx=ctx, write=False)
-        return self.to_agent_read(self.with_computed_status(agent))
+        board_links = await self.load_board_links(agent.id)
+        return self.to_agent_read(self.with_computed_status(agent), board_links=board_links)
 
     async def update_agent(
         self,
@@ -1645,7 +1935,8 @@ class AgentLifecycleService(OpenClawDBService):
             request=provision_request,
         )
         self.logger.info("agent.update.success agent_id=%s", agent.id)
-        return self.to_agent_read(self.with_computed_status(agent))
+        board_links = await self.load_board_links(agent.id)
+        return self.to_agent_read(self.with_computed_status(agent), board_links=board_links)
 
     async def heartbeat_agent(
         self,

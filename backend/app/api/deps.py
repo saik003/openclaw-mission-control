@@ -24,9 +24,12 @@ from uuid import UUID
 
 from fastapi import Depends, HTTPException, Request, status
 
+from sqlmodel import col, select
+
 from app.core.agent_auth import get_agent_auth_context_optional
 from app.core.auth import AuthContext, get_auth_context, get_auth_context_optional
 from app.db.session import get_session
+from app.models.agent_boards import AgentBoard
 from app.models.boards import Board
 from app.models.organizations import Organization
 from app.models.tasks import Task
@@ -138,6 +141,33 @@ async def get_board_or_404(
     return board
 
 
+async def _agent_has_board_access(session: AsyncSession, agent: Agent, board_id: object) -> bool:
+    """Check if an agent has access to a board via agent_boards M2M or legacy board_id."""
+    # Check M2M agent_boards
+    link = (
+        await session.exec(
+            select(AgentBoard)
+            .where(AgentBoard.agent_id == agent.id)
+            .where(AgentBoard.board_id == board_id)
+        )
+    ).first()
+    if link is not None:
+        return True
+    # Fallback: legacy Agent.board_id
+    if agent.board_id is not None and agent.board_id == board_id:
+        return True
+    # Gateway-main agents (no board_id, no M2M links) have broad access
+    if agent.board_id is None:
+        has_any_link = (
+            await session.exec(
+                select(AgentBoard.id).where(AgentBoard.agent_id == agent.id).limit(1)
+            )
+        ).first()
+        if has_any_link is None:
+            return True
+    return False
+
+
 async def get_board_for_actor_read(
     board_id: str,
     session: AsyncSession = SESSION_DEP,
@@ -148,7 +178,7 @@ async def get_board_for_actor_read(
     if board is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
     if actor.actor_type == "agent":
-        if actor.agent and actor.agent.board_id and actor.agent.board_id != board.id:
+        if actor.agent and not await _agent_has_board_access(session, actor.agent, board.id):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN)
         return board
     if actor.user is None:
@@ -167,7 +197,7 @@ async def get_board_for_actor_write(
     if board is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
     if actor.actor_type == "agent":
-        if actor.agent and actor.agent.board_id and actor.agent.board_id != board.id:
+        if actor.agent and not await _agent_has_board_access(session, actor.agent, board.id):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN)
         return board
     if actor.user is None:
