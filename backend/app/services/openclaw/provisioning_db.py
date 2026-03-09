@@ -1692,20 +1692,15 @@ class AgentLifecycleService(OpenClawDBService):
             )
 
         # Subquery: agents that have agent_boards entries for accessible boards
-        m2m_agent_ids = (
-            select(AgentBoard.agent_id)
-            .where(col(AgentBoard.board_id).in_(accessible_board_ids))
-        ) if accessible_board_ids else None
-
         base_filters: list[ColumnElement[bool]] = []
-        if accessible_board_ids:
+        if accessible_board_ids is not None and len(accessible_board_ids) > 0:
             # Include agents matching via M2M OR legacy board_id
-            m2m_filter = col(Agent.id).in_(m2m_agent_ids) if m2m_agent_ids else None
+            m2m_subquery = select(AgentBoard.agent_id).where(
+                col(AgentBoard.board_id).in_(accessible_board_ids)
+            )
+            m2m_filter = col(Agent.id).in_(m2m_subquery)
             legacy_filter = col(Agent.board_id).in_(accessible_board_ids)
-            if m2m_filter is not None:
-                base_filters.append(or_(m2m_filter, legacy_filter))
-            else:
-                base_filters.append(legacy_filter)
+            base_filters.append(or_(m2m_filter, legacy_filter))
         if is_org_admin(ctx.member):
             gateways = await Gateway.objects.filter_by(
                 organization_id=ctx.organization.id,
