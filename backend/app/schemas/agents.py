@@ -91,6 +91,11 @@ class AgentBase(SQLModel):
         description="Optional profile hints used by routing and policy checks.",
         examples=[{"role": "incident_lead", "skill": "triage"}],
     )
+    model: str | None = Field(
+        default=None,
+        description="LLM model identifier this agent runs on (e.g. anthropic/claude-opus-4-6).",
+        examples=["anthropic/claude-opus-4-6", "openai/gpt-4o"],
+    )
     identity_template: str | None = Field(
         default=None,
         description="Template that helps define initial intent and behavior.",
@@ -216,6 +221,11 @@ class AgentUpdate(SQLModel):
         default=None,
         description="Optional identity profile update values.",
         examples=[{"role": "coordinator"}],
+    )
+    model: str | None = Field(
+        default=None,
+        description="Optional replacement LLM model identifier.",
+        examples=["anthropic/claude-opus-4-6"],
     )
     identity_template: str | None = Field(
         default=None,

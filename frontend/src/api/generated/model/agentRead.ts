@@ -29,6 +29,8 @@ export interface AgentRead {
   identity_template?: string | null;
   /** Whether this agent is the board lead. */
   is_board_lead?: boolean;
+  /** LLM model identifier this agent runs on. */
+  model?: string | null;
   /** Whether this agent is the primary gateway agent. */
   is_gateway_main?: boolean;
   /** Last heartbeat timestamp. */

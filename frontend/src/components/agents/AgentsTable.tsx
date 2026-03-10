@@ -118,6 +118,24 @@ export function AgentsTable({
         cell: ({ row }) => pillCell(row.original.status),
       },
       {
+        accessorKey: "model",
+        header: "Model",
+        cell: ({ row }) => {
+          const model = row.original.model;
+          if (!model) return <span className="text-sm text-slate-400">—</span>;
+          // Show short form: "claude-opus-4-6" from "anthropic/claude-opus-4-6"
+          const short = model.includes("/") ? model.split("/").pop()! : model;
+          return (
+            <span
+              className="inline-flex items-center rounded-md bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700"
+              title={model}
+            >
+              {short}
+            </span>
+          );
+        },
+      },
+      {
         accessorKey: "openclaw_session_id",
         header: "Session",
         cell: ({ row }) => (

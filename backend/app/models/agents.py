@@ -38,6 +38,7 @@ class Agent(QueryModel, table=True):
         default=None,
         sa_column=Column(JSON),
     )
+    model: str | None = Field(default=None, sa_column=Column(Text))
     identity_template: str | None = Field(default=None, sa_column=Column(Text))
     soul_template: str | None = Field(default=None, sa_column=Column(Text))
     provision_requested_at: datetime | None = Field(default=None)
