@@ -20,6 +20,7 @@ import {
   useListBoardsApiV1BoardsGet,
 } from "@/api/generated/boards/boards";
 import type { AgentRead, AgentUpdate, BoardRead } from "@/api/generated/model";
+import { AgentFilesEditor } from "@/components/agents/AgentFilesEditor";
 import { DashboardPageLayout } from "@/components/templates/DashboardPageLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -571,6 +572,13 @@ export default function EditAgentPage() {
           </Button>
         </div>
       </form>
+
+        {agentId && (
+          <section className="mt-8 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+            <AgentFilesEditor agentId={agentId} />
+          </section>
+        )}
+
     </DashboardPageLayout>
   );
 }
