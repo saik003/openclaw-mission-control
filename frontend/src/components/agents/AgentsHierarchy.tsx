@@ -51,6 +51,17 @@ function buildTree(agents: AgentRead[]): { roots: TreeNode[]; orphans: AgentRead
     }
   }
 
+  // Sort children: nodes with children first, then alphabetical
+  const sortChildren = (nodes: TreeNode[]) => {
+    nodes.sort((a, b) => {
+      const aHasKids = a.children.length > 0 ? 0 : 1;
+      const bHasKids = b.children.length > 0 ? 0 : 1;
+      if (aHasKids !== bHasKids) return aHasKids - bHasKids;
+      return a.agent.name.localeCompare(b.agent.name);
+    });
+    for (const node of nodes) sortChildren(node.children);
+  };
+
   // Root agents = no parent (or parent not in list)
   const roots: TreeNode[] = [];
   const orphans: AgentRead[] = [];
@@ -61,12 +72,12 @@ function buildTree(agents: AgentRead[]): { roots: TreeNode[]; orphans: AgentRead
       if (children.length > 0 || !agent.parent_agent_id) {
         roots.push({ agent, children });
       } else {
-        // Has a parent_agent_id but parent not in list
         orphans.push(agent);
       }
     }
   }
 
+  sortChildren(roots);
   return { roots, orphans };
 }
 
@@ -112,26 +123,20 @@ function TreeBranch({ node, depth }: { node: TreeNode; depth: number }) {
 
       {hasChildren && (
         <>
-          {/* Vertical connector */}
+          {/* Vertical connector from parent */}
           <div className="h-5 w-px bg-slate-300" />
 
-          {/* Horizontal connector bar (only if multiple children) */}
+          {/* Horizontal connector bar spanning all children */}
           {node.children.length > 1 && (
-            <div className="relative flex items-center justify-center">
-              <div
-                className="h-px bg-slate-300"
-                style={{
-                  width: `calc(${(node.children.length - 1) * 100}% + ${(node.children.length - 1) * 32}px)`,
-                  minWidth: `${(node.children.length - 1) * 180}px`,
-                }}
-              />
+            <div className="self-stretch px-8">
+              <div className="mx-auto h-px bg-slate-300" />
             </div>
           )}
 
-          {/* Children */}
-          <div className="flex flex-wrap items-start justify-center gap-6">
+          {/* Children — no wrap, always on same horizontal line */}
+          <div className="flex items-start justify-center">
             {node.children.map((child) => (
-              <div key={child.agent.id} className="flex flex-col items-center">
+              <div key={child.agent.id} className="flex flex-col items-center px-3">
                 <div className="h-5 w-px bg-slate-300" />
                 <TreeBranch node={child} depth={depth + 1} />
               </div>
