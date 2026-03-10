@@ -20,6 +20,8 @@ from app.core.time import utcnow
 from app.db import crud
 from app.db.pagination import paginate
 from app.db.session import get_session
+from app.models.agent_boards import AgentBoard
+from app.models.agent_jobs import AgentJob
 from app.models.agents import Agent
 from app.models.board_memory import BoardMemory
 from app.models.board_webhook_payloads import BoardWebhookPayload
@@ -61,6 +63,32 @@ def _webhook_endpoint_url(endpoint_path: str) -> str | None:
     if not base_url:
         return None
     return f"{base_url}{endpoint_path}"
+
+
+async def _get_agent_on_board(
+    *, session: AsyncSession, board: Board, agent_id: UUID
+) -> Agent | None:
+    m2m_subquery = select(AgentBoard.agent_id).where(col(AgentBoard.board_id) == board.id)
+    return (
+        await Agent.objects.filter(col(Agent.id) == agent_id)
+        .filter(
+            (col(Agent.id).in_(m2m_subquery))
+            | ((col(Agent.board_id) == board.id))
+        )
+        .first(session)
+    )
+
+
+async def _get_board_lead(*, session: AsyncSession, board: Board) -> Agent | None:
+    lead_m2m_subquery = select(AgentBoard.agent_id).where(
+        (col(AgentBoard.board_id) == board.id) & (col(AgentBoard.role) == "lead")
+    )
+    return (
+        await Agent.objects.filter(
+            ((col(Agent.id).in_(lead_m2m_subquery)))
+            | ((col(Agent.board_id) == board.id) & (col(Agent.is_board_lead).is_(True)))
+        ).first(session)
+    )
 
 
 def _to_webhook_read(webhook: BoardWebhook) -> BoardWebhookRead:
@@ -270,6 +298,63 @@ def _webhook_memory_content(
     )
 
 
+async def _create_agent_job_for_webhook_payload(
+    *,
+    session: AsyncSession,
+    board: Board,
+    webhook: BoardWebhook,
+    payload: BoardWebhookPayload,
+) -> AgentJob | None:
+    target_agent: Agent | None = None
+    if webhook.agent_id is not None:
+        target_agent = await _get_agent_on_board(
+            session=session, board=board, agent_id=webhook.agent_id
+        )
+    if target_agent is None:
+        target_agent = await _get_board_lead(session=session, board=board)
+    if target_agent is None:
+        return None
+
+    existing = (
+        await session.exec(
+            select(AgentJob)
+            .where(col(AgentJob.payload_id) == payload.id)
+            .where(col(AgentJob.agent_id) == target_agent.id)
+        )
+    ).first()
+    if existing is not None:
+        return existing
+
+    job = AgentJob(
+        agent_id=target_agent.id,
+        board_id=board.id,
+        webhook_id=webhook.id,
+        payload_id=payload.id,
+        trigger_type="webhook",
+        title=f"Webhook: {webhook.description}",
+        instructions=(
+            f"Process webhook payload {payload.id} for board '{board.name}'. "
+            f"Instruction: {webhook.description}"
+        ),
+        status="queued",
+        priority=0,
+        lock_key=f"payload:{payload.id}",
+    )
+    session.add(job)
+    await session.commit()
+    await session.refresh(job)
+    logger.info(
+        "webhook.agent_job.created",
+        extra={
+            "job_id": str(job.id),
+            "agent_id": str(job.agent_id),
+            "board_id": str(job.board_id),
+            "payload_id": str(job.payload_id),
+        },
+    )
+    return job
+
+
 async def _notify_lead_on_webhook_payload(
     *,
     session: AsyncSession,
@@ -279,15 +364,11 @@ async def _notify_lead_on_webhook_payload(
 ) -> None:
     target_agent: Agent | None = None
     if webhook.agent_id is not None:
-        target_agent = await Agent.objects.filter_by(id=webhook.agent_id, board_id=board.id).first(
-            session
+        target_agent = await _get_agent_on_board(
+            session=session, board=board, agent_id=webhook.agent_id
         )
     if target_agent is None:
-        target_agent = (
-            await Agent.objects.filter_by(board_id=board.id)
-            .filter(col(Agent.is_board_lead).is_(True))
-            .first(session)
-        )
+        target_agent = await _get_board_lead(session=session, board=board)
     if target_agent is None or not target_agent.openclaw_session_id:
         return
 
@@ -331,7 +412,11 @@ async def _validate_agent_id(
 ) -> None:
     if agent_id is None:
         return
-    agent = await Agent.objects.filter_by(id=agent_id, board_id=board.id).first(session)
+    agent = await _get_agent_on_board(
+        session=session,
+        board=board,
+        agent_id=agent_id,
+    )
     if agent is None:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
@@ -596,6 +681,13 @@ async def ingest_board_webhook(
         },
     )
 
+    agent_job = await _create_agent_job_for_webhook_payload(
+        session=session,
+        board=board,
+        webhook=webhook,
+        payload=payload,
+    )
+
     enqueued = enqueue_webhook_delivery(
         QueuedInboundDelivery(
             board_id=board.id,
@@ -610,6 +702,7 @@ async def ingest_board_webhook(
             "payload_id": str(payload.id),
             "board_id": str(board.id),
             "webhook_id": str(webhook.id),
+            "agent_job_id": str(agent_job.id) if agent_job is not None else None,
             "enqueued": enqueued,
         },
     )

@@ -90,7 +90,9 @@ export default function AgentsPage() {
   const agents = useMemo(
     () =>
       agentsQuery.data?.status === 200
-        ? (agentsQuery.data.data.items ?? [])
+        ? (agentsQuery.data.data.items ?? []).filter(
+            (a) => !a.name.toLowerCase().includes("gateway agent"),
+          )
         : [],
     [agentsQuery.data],
   );

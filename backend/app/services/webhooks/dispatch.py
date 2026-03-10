@@ -7,11 +7,13 @@ import random
 import time
 from uuid import UUID
 
+from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.config import settings
 from app.core.logging import get_logger
 from app.db.session import async_session_maker
+from app.models.agent_boards import AgentBoard
 from app.models.agents import Agent
 from app.models.board_webhook_payloads import BoardWebhookPayload
 from app.models.board_webhooks import BoardWebhook
@@ -25,6 +27,32 @@ from app.services.webhooks.queue import (
 )
 
 logger = get_logger(__name__)
+
+
+async def _get_agent_on_board(
+    *, session: AsyncSession, board: Board, agent_id: UUID
+) -> Agent | None:
+    m2m_subquery = select(AgentBoard.agent_id).where(col(AgentBoard.board_id) == board.id)
+    return (
+        await Agent.objects.filter(col(Agent.id) == agent_id)
+        .filter(
+            (col(Agent.id).in_(m2m_subquery))
+            | (col(Agent.board_id) == board.id)
+        )
+        .first(session)
+    )
+
+
+async def _get_board_lead(*, session: AsyncSession, board: Board) -> Agent | None:
+    lead_m2m_subquery = select(AgentBoard.agent_id).where(
+        (col(AgentBoard.board_id) == board.id) & (col(AgentBoard.role) == "lead")
+    )
+    return (
+        await Agent.objects.filter(
+            (col(Agent.id).in_(lead_m2m_subquery))
+            | ((col(Agent.board_id) == board.id) & (col(Agent.is_board_lead).is_(True)))
+        ).first(session)
+    )
 
 
 def _build_payload_preview(payload_value: object) -> str:
@@ -73,13 +101,11 @@ async def _notify_target_agent(
 ) -> None:
     target_agent: Agent | None = None
     if webhook.agent_id is not None:
-        target_agent = await Agent.objects.filter_by(id=webhook.agent_id, board_id=board.id).first(
-            session
+        target_agent = await _get_agent_on_board(
+            session=session, board=board, agent_id=webhook.agent_id
         )
     if target_agent is None:
-        target_agent = await Agent.objects.filter_by(board_id=board.id, is_board_lead=True).first(
-            session
-        )
+        target_agent = await _get_board_lead(session=session, board=board)
     if target_agent is None or not target_agent.openclaw_session_id:
         return
 

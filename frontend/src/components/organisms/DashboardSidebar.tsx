@@ -256,6 +256,18 @@ export function DashboardSidebar() {
                 </Link>
               ) : null}
               <Link
+                href="/workload"
+                className={cn(
+                  "flex items-center gap-3 rounded-lg px-3 py-2.5 text-slate-700 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50 focus-visible:ring-offset-1",
+                  pathname.startsWith("/workload")
+                    ? "bg-blue-100 text-blue-800 font-medium"
+                    : "hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50 focus-visible:ring-offset-1",
+                )}
+              >
+                <Boxes className="h-4 w-4" />
+                Workload
+              </Link>
+              <Link
                 href="/timeline"
                 className={cn(
                   "flex items-center gap-3 rounded-lg px-3 py-2.5 text-slate-700 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50 focus-visible:ring-offset-1",

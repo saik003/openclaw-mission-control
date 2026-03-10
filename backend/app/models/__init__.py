@@ -2,6 +2,7 @@
 
 from app.models.activity_events import ActivityEvent
 from app.models.agent_boards import AgentBoard
+from app.models.agent_jobs import AgentJob
 from app.models.agents import Agent
 from app.models.approval_task_links import ApprovalTaskLink
 from app.models.approvals import Approval
@@ -34,6 +35,7 @@ from app.models.users import User
 __all__ = [
     "ActivityEvent",
     "AgentBoard",
+    "AgentJob",
     "Agent",
     "ApprovalTaskLink",
     "Approval",
