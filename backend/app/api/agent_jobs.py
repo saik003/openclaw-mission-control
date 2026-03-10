@@ -15,6 +15,7 @@ from app.models.agent_jobs import AgentJob
 from app.models.agents import Agent
 from app.models.gateways import Gateway
 from app.schemas.agent_jobs import AgentJobRead, AgentWorkloadRead
+from app.core.time import utcnow
 from app.services.organizations import OrganizationContext
 
 if TYPE_CHECKING:
@@ -78,3 +79,73 @@ async def get_agent_workload(
             )
         )
     return result
+
+
+class WorkerStatusRead(AgentWorkloadRead):
+    pass
+
+
+from pydantic import BaseModel as _BaseModel
+
+
+class WorkerHealthRead(_BaseModel):
+    running: bool
+    pid: int | None = None
+    total_queued: int
+    total_running: int
+    total_failed: int
+
+
+@router.get("/worker-health", response_model=WorkerHealthRead)
+async def get_worker_health(
+    session: AsyncSession = SESSION_DEP,
+    ctx: OrganizationContext = ORG_ADMIN_DEP,
+) -> WorkerHealthRead:
+    """Check if the job worker is running and return queue stats."""
+    import subprocess
+
+    try:
+        result = subprocess.run(
+            ["systemctl", "--user", "is-active", "mc-job-worker.service"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        is_running = result.stdout.strip() == "active"
+    except Exception:
+        is_running = False
+
+    pid = None
+    if is_running:
+        try:
+            result = subprocess.run(
+                ["systemctl", "--user", "show", "mc-job-worker.service", "--property=MainPID"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            pid_str = result.stdout.strip().split("=")[-1]
+            pid = int(pid_str) if pid_str.isdigit() and pid_str != "0" else None
+        except Exception:
+            pass
+
+    from sqlmodel import func
+
+    queued_count = (
+        await session.exec(select(func.count(AgentJob.id)).where(col(AgentJob.status) == "queued"))
+    ).one()
+    running_count = (
+        await session.exec(
+            select(func.count(AgentJob.id)).where(col(AgentJob.status) == "running"))
+    ).one()
+    failed_count = (
+        await session.exec(select(func.count(AgentJob.id)).where(col(AgentJob.status) == "failed"))
+    ).one()
+
+    return WorkerHealthRead(
+        running=is_running,
+        pid=pid,
+        total_queued=queued_count,
+        total_running=running_count,
+        total_failed=failed_count,
+    )

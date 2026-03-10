@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { DashboardPageLayout } from "@/components/templates/DashboardPageLayout";
 import { customFetch } from "@/api/mutator";
 import { cn } from "@/lib/utils";
-import { Bot, Clock3, PlayCircle, TriangleAlert } from "lucide-react";
+import { Bot, Clock3, PlayCircle, RefreshCw, TriangleAlert } from "lucide-react";
 
 interface ApiResponse<T> {
   data: T;
@@ -42,8 +42,22 @@ interface AgentWorkloadRead {
   failed: AgentJobRead[];
 }
 
+interface WorkerHealth {
+  running: boolean;
+  pid: number | null;
+  total_queued: number;
+  total_running: number;
+  total_failed: number;
+}
+
 async function listWorkload(): Promise<ApiResponse<AgentWorkloadRead[]>> {
   return customFetch<ApiResponse<AgentWorkloadRead[]>>("/api/v1/agent-jobs/workload", {
+    method: "GET",
+  });
+}
+
+async function fetchWorkerHealth(): Promise<ApiResponse<WorkerHealth>> {
+  return customFetch<ApiResponse<WorkerHealth>>("/api/v1/agent-jobs/worker-health", {
     method: "GET",
   });
 }
@@ -91,25 +105,32 @@ function JobCard({ job, tone = "queued" }: { job: AgentJobRead; tone?: "running"
 
 export default function WorkloadPage() {
   const [workload, setWorkload] = useState<AgentWorkloadRead[]>([]);
+  const [health, setHealth] = useState<WorkerHealth | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const loadData = useCallback(async () => {
+    try {
+      const [wl, wh] = await Promise.all([listWorkload(), fetchWorkerHealth()]);
+      setWorkload(wl.data);
+      setHealth(wh.data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load.");
+    }
+  }, []);
 
   useEffect(() => {
-    let cancelled = false;
-    listWorkload()
-      .then((result) => {
-        if (!cancelled) setWorkload(result.data);
-      })
-      .catch((err) => {
-        if (!cancelled) setError(err.message || "Failed to load workload.");
-      })
-      .finally(() => {
-        if (!cancelled) setIsLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+    loadData().finally(() => setIsLoading(false));
+    const iv = setInterval(() => void loadData(), 10_000);
+    return () => clearInterval(iv);
+  }, [loadData]);
+
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await loadData();
+    setRefreshing(false);
+  }, [loadData]);
 
   const activeAgents = useMemo(
     () => workload.filter((w) => w.running.length || w.queued.length || w.failed.length),
@@ -125,7 +146,50 @@ export default function WorkloadPage() {
       }}
       title="Workload"
       description="Kanban operativo por agente: running + queued + failed."
+      headerActions={
+        <button
+          type="button"
+          onClick={() => void handleRefresh()}
+          disabled={refreshing}
+          className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:opacity-50"
+        >
+          <RefreshCw className={cn("h-3.5 w-3.5", refreshing && "animate-spin")} />
+          Refresh
+        </button>
+      }
     >
+      {/* Worker status bar */}
+      {health && (
+        <div
+          className={cn(
+            "mb-4 flex items-center gap-4 rounded-xl border px-4 py-3 text-sm",
+            health.running
+              ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+              : "border-rose-200 bg-rose-50 text-rose-800",
+          )}
+        >
+          <div className="flex items-center gap-2">
+            <span
+              className={cn(
+                "inline-block h-2.5 w-2.5 rounded-full",
+                health.running ? "bg-emerald-500 animate-pulse" : "bg-rose-500",
+              )}
+            />
+            <span className="font-semibold">
+              Worker: {health.running ? "Running" : "Stopped"}
+            </span>
+            {health.pid ? (
+              <span className="text-xs opacity-60">(PID {health.pid})</span>
+            ) : null}
+          </div>
+          <div className="flex gap-4 text-xs">
+            <span>Queued: <strong>{health.total_queued}</strong></span>
+            <span>Running: <strong>{health.total_running}</strong></span>
+            <span>Failed: <strong>{health.total_failed}</strong></span>
+          </div>
+        </div>
+      )}
+
       {error ? (
         <div className="mb-4 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
           {error}
