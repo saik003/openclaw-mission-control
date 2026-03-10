@@ -302,6 +302,9 @@ export default function EditBoardPage() {
     boolean | undefined
   >(undefined);
   const [maxAgents, setMaxAgents] = useState<number | undefined>(undefined);
+  const [defaultTaskAssigneeId, setDefaultTaskAssigneeId] = useState<
+    string | undefined
+  >(undefined);
   const [successMetrics, setSuccessMetrics] = useState<string | undefined>(
     undefined,
   );
@@ -426,7 +429,7 @@ export default function EditBoardPage() {
     mutation: {
       onSuccess: (result) => {
         if (result.status === 200) {
-          router.push(`/boards/${result.data.id}`);
+          router.push(`/boards/${result.data.id}?saved=1`);
         }
       },
       onError: (err) => {
@@ -516,6 +519,8 @@ export default function EditBoardPage() {
   const resolvedOnlyLeadCanChangeStatus =
     onlyLeadCanChangeStatus ?? baseBoard?.only_lead_can_change_status ?? false;
   const resolvedMaxAgents = maxAgents ?? baseBoard?.max_agents ?? 1;
+  const resolvedDefaultTaskAssigneeId =
+    defaultTaskAssigneeId ?? baseBoard?.default_task_assignee_id ?? "unassigned";
   const resolvedSuccessMetrics =
     successMetrics ??
     (baseBoard?.success_metrics
@@ -599,6 +604,7 @@ export default function EditBoardPage() {
     );
     setOnlyLeadCanChangeStatus(updated.only_lead_can_change_status ?? false);
     setMaxAgents(updated.max_agents ?? 1);
+    setDefaultTaskAssigneeId(updated.default_task_assignee_id ?? "unassigned");
     setSuccessMetrics(
       updated.success_metrics
         ? JSON.stringify(updated.success_metrics, null, 2)
@@ -654,7 +660,9 @@ export default function EditBoardPage() {
       description: trimmedDescription,
       gateway_id: resolvedGatewayId || null,
       board_group_id:
-        resolvedBoardGroupId === "none" ? null : resolvedBoardGroupId,
+        resolvedBoardGroupId === "none" || !resolvedBoardGroupId
+          ? null
+          : resolvedBoardGroupId,
       board_type: resolvedBoardType,
       objective:
         resolvedBoardType === "general"
@@ -667,6 +675,11 @@ export default function EditBoardPage() {
         resolvedBlockStatusChangesWithPendingApproval,
       only_lead_can_change_status: resolvedOnlyLeadCanChangeStatus,
       max_agents: resolvedMaxAgents,
+      default_task_assignee_id:
+        resolvedDefaultTaskAssigneeId === "unassigned" ||
+        !resolvedDefaultTaskAssigneeId
+          ? null
+          : resolvedDefaultTaskAssigneeId,
       success_metrics: resolvedBoardType === "general" ? null : parsedMetrics,
       target_date:
         resolvedBoardType === "general"
@@ -857,6 +870,32 @@ export default function EditBoardPage() {
                     }}
                     disabled={isLoading}
                   />
+                </div>
+                <div className="space-y-2 pt-1">
+                  <label className="text-sm font-medium text-slate-900">
+                    Default new-task assignee
+                  </label>
+                  <Select
+                    value={resolvedDefaultTaskAssigneeId}
+                    onValueChange={setDefaultTaskAssigneeId}
+                    disabled={isLoading}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select default assignee" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="unassigned">Unassigned</SelectItem>
+                      {webhookAgents.map((agent) => (
+                        <SelectItem key={agent.id} value={agent.id}>
+                          {agent.name}
+                          {agent.is_board_lead ? " (lead)" : ""}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-slate-500">
+                    Preselect this agent when creating a new task on the board.
+                  </p>
                 </div>
               </div>
               <div className="space-y-2">

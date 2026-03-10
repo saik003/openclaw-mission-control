@@ -45,5 +45,10 @@ class Board(TenantScoped, table=True):
     block_status_changes_with_pending_approval: bool = Field(default=False)
     only_lead_can_change_status: bool = Field(default=False)
     max_agents: int = Field(default=1)
+    default_task_assignee_id: UUID | None = Field(
+        default=None,
+        foreign_key="agents.id",
+        index=True,
+    )
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)

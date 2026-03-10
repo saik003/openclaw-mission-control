@@ -992,6 +992,20 @@ export default function BoardDetailPage() {
     [dismissToast],
   );
 
+  const savedToastShownRef = useRef(false);
+  useEffect(() => {
+    if (searchParams.get("saved") === "1" && !savedToastShownRef.current) {
+      savedToastShownRef.current = true;
+      pushToast("Board settings saved", "success");
+      const next = new URLSearchParams(searchParams.toString());
+      next.delete("saved");
+      const qs = next.toString();
+      router.replace(
+        qs ? `/boards/${boardId}?${qs}` : `/boards/${boardId}`,
+      );
+    }
+  }, [boardId, pushToast, router, searchParams]);
+
   useEffect(() => {
     liveFeedHistoryLoadedRef.current = false;
     setIsLiveFeedHistoryLoading(false);
@@ -1156,6 +1170,7 @@ export default function BoardDetailPage() {
   const [description, setDescription] = useState("");
   const [priority, setPriority] = useState("medium");
   const [createDueDate, setCreateDueDate] = useState("");
+  const [createAssigneeId, setCreateAssigneeId] = useState("");
   const [createTagIds, setCreateTagIds] = useState<string[]>([]);
   const [createCustomFieldValues, setCreateCustomFieldValues] =
     useState<TaskCustomFieldValues>({});
@@ -1990,6 +2005,7 @@ export default function BoardDetailPage() {
     setDescription("");
     setPriority("medium");
     setCreateDueDate("");
+    setCreateAssigneeId(board?.default_task_assignee_id ?? "");
     setCreateTagIds([]);
     setCreateCustomFieldValues(defaultCreateCustomFieldValues);
     setCreateError(null);
@@ -2025,6 +2041,7 @@ export default function BoardDetailPage() {
         status: "inbox",
         priority,
         due_at: localDateInputToUtcIso(createDueDate),
+        assigned_agent_id: createAssigneeId || null,
         tag_ids: createTagIds,
         custom_field_values: createCustomFieldPayload,
       };
@@ -2464,6 +2481,16 @@ export default function BoardDetailPage() {
       return a.name.localeCompare(b.name);
     });
   }, [agents, workingAgentIds]);
+
+  useEffect(() => {
+    if (
+      isDialogOpen &&
+      !createAssigneeId &&
+      board?.default_task_assignee_id
+    ) {
+      setCreateAssigneeId(board.default_task_assignee_id);
+    }
+  }, [board?.default_task_assignee_id, createAssigneeId, isDialogOpen]);
 
   const boardLead = useMemo(
     () => agents.find((agent) => agent.is_board_lead) ?? null,
@@ -4736,6 +4763,30 @@ export default function BoardDetailPage() {
                   {priorities.map((item) => (
                     <SelectItem key={item.value} value={item.value}>
                       {item.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-strong">
+                Assignee
+              </label>
+              <Select
+                value={createAssigneeId || "unassigned"}
+                onValueChange={(value) =>
+                  setCreateAssigneeId(value === "unassigned" ? "" : value)
+                }
+                disabled={!canWrite || isCreating}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select assignee" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="unassigned">Unassigned</SelectItem>
+                  {sortedAgents.map((agent) => (
+                    <SelectItem key={agent.id} value={agent.id}>
+                      {agent.name}
                     </SelectItem>
                   ))}
                 </SelectContent>

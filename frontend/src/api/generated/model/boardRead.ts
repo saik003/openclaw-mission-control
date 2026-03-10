@@ -16,6 +16,7 @@ export interface BoardRead {
   comment_required_for_review?: boolean;
   created_at: string;
   description: string;
+  default_task_assignee_id?: string | null;
   gateway_id?: string | null;
   goal_confirmed?: boolean;
   goal_source?: string | null;

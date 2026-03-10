@@ -15,6 +15,7 @@ export interface BoardUpdate {
   board_type?: string | null;
   comment_required_for_review?: boolean | null;
   description?: string | null;
+  default_task_assignee_id?: string | null;
   gateway_id?: string | null;
   goal_confirmed?: boolean | null;
   goal_source?: string | null;
