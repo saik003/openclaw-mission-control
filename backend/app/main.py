@@ -14,6 +14,7 @@ from app.api.activity import router as activity_router
 from app.api.agent import router as agent_router
 from app.api.agent_files import router as agent_files_router
 from app.api.docs import router as docs_router
+from app.api.timeline import router as timeline_router
 from app.api.agents import router as agents_router
 from app.api.approvals import router as approvals_router
 from app.api.auth import router as auth_router
@@ -544,6 +545,7 @@ api_v1.include_router(agent_router)
 api_v1.include_router(agents_router)
 api_v1.include_router(agent_files_router)
 api_v1.include_router(docs_router)
+api_v1.include_router(timeline_router)
 api_v1.include_router(activity_router)
 api_v1.include_router(gateway_router)
 api_v1.include_router(gateways_router)

@@ -8,6 +8,7 @@ import {
   Bot,
   Boxes,
   CheckCircle2,
+  Clock,
   FileText,
   Folder,
   Building2,
@@ -254,6 +255,18 @@ export function DashboardSidebar() {
                   Agents
                 </Link>
               ) : null}
+              <Link
+                href="/timeline"
+                className={cn(
+                  "flex items-center gap-3 rounded-lg px-3 py-2.5 text-slate-700 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50 focus-visible:ring-offset-1",
+                  pathname.startsWith("/timeline")
+                    ? "bg-blue-100 text-blue-800 font-medium"
+                    : "hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50 focus-visible:ring-offset-1",
+                )}
+              >
+                <Clock className="h-4 w-4" />
+                Timeline
+              </Link>
               <Link
                 href="/docs"
                 className={cn(
