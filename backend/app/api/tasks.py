@@ -152,7 +152,7 @@ def _approval_required_for_done_error() -> HTTPException:
     return HTTPException(
         status_code=status.HTTP_409_CONFLICT,
         detail={
-            "message": ("Task can only be marked done when a linked approval has been approved."),
+            "message": "This task needs approval before it can be marked as done. Ask an agent or reviewer to approve it first.",
             "blocked_by_task_ids": [],
         },
     )
@@ -162,7 +162,7 @@ def _review_required_for_done_error() -> HTTPException:
     return HTTPException(
         status_code=status.HTTP_409_CONFLICT,
         detail={
-            "message": ("Task can only be marked done from review when the board rule is enabled."),
+            "message": "This task must go through review before it can be marked as done.",
             "blocked_by_task_ids": [],
         },
     )
@@ -172,7 +172,7 @@ def _pending_approval_blocks_status_change_error() -> HTTPException:
     return HTTPException(
         status_code=status.HTTP_409_CONFLICT,
         detail={
-            "message": ("Task status cannot be changed while a linked approval is pending."),
+            "message": "Can't change status — there's a pending approval on this task. Approve or reject it first.",
             "blocked_by_task_ids": [],
         },
     )

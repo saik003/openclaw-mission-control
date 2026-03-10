@@ -507,7 +507,7 @@ export default function EditBoardPage() {
   const resolvedBoardType = boardType ?? baseBoard?.board_type ?? "goal";
   const resolvedObjective = objective ?? baseBoard?.objective ?? "";
   const resolvedRequireApprovalForDone =
-    requireApprovalForDone ?? baseBoard?.require_approval_for_done ?? true;
+    requireApprovalForDone ?? baseBoard?.require_approval_for_done ?? false;
   const resolvedRequireReviewBeforeDone =
     requireReviewBeforeDone ?? baseBoard?.require_review_before_done ?? false;
   const resolvedCommentRequiredForReview =
@@ -596,7 +596,7 @@ export default function EditBoardPage() {
     setDescription(updated.description ?? "");
     setBoardType(updated.board_type ?? "goal");
     setObjective(updated.objective ?? "");
-    setRequireApprovalForDone(updated.require_approval_for_done ?? true);
+    setRequireApprovalForDone(updated.require_approval_for_done ?? false);
     setRequireReviewBeforeDone(updated.require_review_before_done ?? false);
     setCommentRequiredForReview(updated.comment_required_for_review ?? false);
     setBlockStatusChangesWithPendingApproval(
