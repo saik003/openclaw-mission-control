@@ -94,7 +94,7 @@ export function DashboardShell({ children }: { children: ReactNode }) {
 
   return (
     <div className="min-h-screen w-full max-w-[100vw] overflow-x-hidden bg-app text-strong" data-sidebar={sidebarOpen ? "open" : "closed"}>
-      <header className="sticky top-0 z-50 w-full max-w-[100vw] overflow-x-hidden border-b border-slate-200 bg-white shadow-sm">
+      <header role="banner" className="sticky top-0 z-50 w-full max-w-[100vw] overflow-x-hidden border-b border-slate-200 bg-white shadow-sm">
         <div className="flex w-full max-w-[100vw] min-w-0 items-center py-3">
           <div className="flex min-w-0 shrink items-center px-4 md:px-6 md:w-[260px] md:shrink-0">
             {isSignedIn ? (
@@ -140,7 +140,7 @@ export function DashboardShell({ children }: { children: ReactNode }) {
         />
       ) : null}
 
-      <div className="grid min-h-[calc(100vh-64px)] w-full min-w-0 grid-cols-1 md:grid-cols-[260px_1fr] bg-slate-50">
+      <div role="main" className="grid min-h-[calc(100vh-64px)] w-full min-w-0 grid-cols-1 md:grid-cols-[260px_1fr] bg-slate-50">
         {children}
       </div>
     </div>

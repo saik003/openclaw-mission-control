@@ -20,7 +20,9 @@ import {
   useListBoardsApiV1BoardsGet,
 } from "@/api/generated/boards/boards";
 import type { AgentRead, AgentUpdate, BoardRead } from "@/api/generated/model";
+import { AgentDocsViewer } from "@/components/agents/AgentDocsViewer";
 import { AgentFilesEditor } from "@/components/agents/AgentFilesEditor";
+import { AgentMemoryDiary } from "@/components/agents/AgentMemoryDiary";
 import { DashboardPageLayout } from "@/components/templates/DashboardPageLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -574,9 +576,20 @@ export default function EditAgentPage() {
       </form>
 
         {agentId && (
-          <section className="mt-8 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-            <AgentFilesEditor agentId={agentId} />
-          </section>
+          <>
+            <section className="mt-8 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+              <AgentFilesEditor agentId={agentId} />
+            </section>
+
+            <section className="mt-8 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+              <h3 className="mb-4 text-sm font-semibold text-slate-900">
+                📔 Memory diary
+              </h3>
+              <AgentMemoryDiary agentId={agentId} />
+            </section>
+
+
+          </>
         )}
 
     </DashboardPageLayout>

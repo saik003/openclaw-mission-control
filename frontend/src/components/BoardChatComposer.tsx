@@ -227,17 +227,19 @@ function BoardChatComposerImpl({
           disabled={isSending || disabled}
         />
         {mentionTarget && filteredMentionOptions.length > 0 ? (
-          <div className="absolute bottom-full left-0 z-20 mb-2 w-full overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg">
+          <div role="listbox" aria-label="Mention suggestions" className="absolute bottom-full left-0 z-20 mb-2 w-full overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg">
             <div className="max-h-52 overflow-y-auto py-1">
               {filteredMentionOptions.map((option, index) => (
                 <button
                   key={option}
                   type="button"
+                  role="option"
+                  aria-selected={index === activeIndex}
                   onMouseDown={(event) => {
                     event.preventDefault();
                     applyMentionSelection(option);
                   }}
-                  className={`flex w-full items-center justify-between px-3 py-2 text-left text-sm transition ${
+                  className={`flex w-full items-center justify-between px-3 py-2 text-left text-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50 focus-visible:ring-inset ${
                     index === activeIndex
                       ? "bg-slate-100 text-slate-900"
                       : "text-slate-700 hover:bg-slate-50"

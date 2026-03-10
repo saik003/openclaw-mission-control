@@ -7,6 +7,7 @@ directory, then serves .md files from there.  No database involved.
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 from uuid import UUID
 
@@ -59,6 +60,9 @@ def _resolve_workspace(agent_id: UUID) -> Path:
     )
 
 
+# ── Models ─────────────────────────────────────────────────────────────
+
+
 class AgentFileRead(BaseModel):
     filename: str
     content: str
@@ -73,6 +77,20 @@ class AgentFileListItem(BaseModel):
     filename: str
     exists: bool
     size: int
+
+
+class MemoryFileListItem(BaseModel):
+    filename: str
+    size: int
+    modified: str  # ISO 8601
+
+
+class MemoryFileRead(BaseModel):
+    filename: str
+    content: str
+
+
+# ── Workspace files ────────────────────────────────────────────────────
 
 
 @router.get("", response_model=list[AgentFileListItem])
@@ -110,6 +128,118 @@ async def list_agent_files(agent_id: UUID) -> list[AgentFileListItem]:
                     )
                 )
     return result
+
+
+# ── Memory diary (read-only) — MUST be before /{filename} ─────────────
+
+
+@router.get("/memory", response_model=list[MemoryFileListItem])
+async def list_memory_files(agent_id: UUID) -> list[MemoryFileListItem]:
+    """List all files in the agent's memory/ directory, newest first."""
+    workspace = _resolve_workspace(agent_id)
+    memory_dir = workspace / "memory"
+    if not memory_dir.is_dir():
+        return []
+    result: list[MemoryFileListItem] = []
+    for entry in sorted(memory_dir.iterdir(), reverse=True):
+        if entry.is_file() and entry.suffix == ".md":
+            stat = entry.stat()
+            modified = datetime.fromtimestamp(
+                stat.st_mtime, tz=timezone.utc
+            ).isoformat()
+            result.append(
+                MemoryFileListItem(
+                    filename=entry.name,
+                    size=stat.st_size,
+                    modified=modified,
+                )
+            )
+    return result
+
+
+@router.get("/memory/{filename}", response_model=MemoryFileRead)
+async def read_memory_file(agent_id: UUID, filename: str) -> MemoryFileRead:
+    """Read a single memory file (read-only)."""
+    if "/" in filename or "\\" in filename or filename.startswith("."):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid filename.",
+        )
+    workspace = _resolve_workspace(agent_id)
+    filepath = workspace / "memory" / filename
+    if not filepath.is_file():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Memory file '{filename}' not found.",
+        )
+    try:
+        content = filepath.read_text(encoding="utf-8")
+    except Exception as exc:
+        logger.error("Failed to read memory file %s: %s", filepath, exc)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Unable to read file: {exc}",
+        ) from exc
+    return MemoryFileRead(filename=filename, content=content)
+
+
+# ── Shared docs (read-only, from main workspace) ──────────────────────
+
+
+MAIN_WORKSPACE = Path.home() / ".openclaw" / "workspace"
+
+
+@router.get("/docs", response_model=list[MemoryFileListItem])
+async def list_docs_files(agent_id: UUID) -> list[MemoryFileListItem]:
+    """List all files in the shared docs/ directory (main workspace)."""
+    _ = _resolve_workspace(agent_id)  # validate agent exists
+    docs_dir = MAIN_WORKSPACE / "docs"
+    if not docs_dir.is_dir():
+        return []
+    result: list[MemoryFileListItem] = []
+    for entry in sorted(docs_dir.iterdir()):
+        if entry.is_file() and entry.suffix == ".md":
+            stat = entry.stat()
+            modified = datetime.fromtimestamp(
+                stat.st_mtime, tz=timezone.utc
+            ).isoformat()
+            result.append(
+                MemoryFileListItem(
+                    filename=entry.name,
+                    size=stat.st_size,
+                    modified=modified,
+                )
+            )
+    return result
+
+
+@router.get("/docs/{filename}", response_model=MemoryFileRead)
+async def read_docs_file(agent_id: UUID, filename: str) -> MemoryFileRead:
+    """Read a shared doc file (read-only)."""
+    if "/" in filename or "\\" in filename or filename.startswith("."):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid filename.",
+        )
+    _ = _resolve_workspace(agent_id)  # validate agent exists
+    filepath = MAIN_WORKSPACE / "docs" / filename
+    if not filepath.is_file():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Doc '{filename}' not found.",
+        )
+    try:
+        content = filepath.read_text(encoding="utf-8")
+    except Exception as exc:
+        logger.error("Failed to read doc %s: %s", filepath, exc)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Unable to read file: {exc}",
+        ) from exc
+    return MemoryFileRead(filename=filename, content=content)
+
+
+# ── Individual file read/write ─────────────────────────────────────────
 
 
 @router.get("/{filename}", response_model=AgentFileRead)
@@ -161,7 +291,12 @@ async def write_agent_file(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Unable to write file: {exc}",
         ) from exc
-    logger.info("agent_files.write agent_id=%s file=%s bytes=%d", agent_id, filename, len(payload.content))
+    logger.info(
+        "agent_files.write agent_id=%s file=%s bytes=%d",
+        agent_id,
+        filename,
+        len(payload.content),
+    )
     return AgentFileRead(
         filename=filename, content=payload.content, exists=True
     )

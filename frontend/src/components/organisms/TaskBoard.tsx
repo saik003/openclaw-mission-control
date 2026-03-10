@@ -474,7 +474,7 @@ export const TaskBoard = memo(function TaskBoard({
                       type="button"
                       onClick={() => setReviewBucket(option.key)}
                       className={cn(
-                        "rounded-full border px-2.5 py-1 transition",
+                        "rounded-full border px-2.5 py-1 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50 focus-visible:ring-offset-1",
                         reviewBucket === option.key
                           ? "border-slate-900 bg-slate-900 text-white"
                           : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50",

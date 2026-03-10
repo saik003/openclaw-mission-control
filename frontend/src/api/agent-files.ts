@@ -41,6 +41,59 @@ export async function readAgentFile(
   );
 }
 
+// ── Memory diary (read-only) ──
+
+export interface MemoryFileListItem {
+  filename: string;
+  size: number;
+  modified: string;
+}
+
+export interface MemoryFileRead {
+  filename: string;
+  content: string;
+}
+
+export async function listMemoryFiles(
+  agentId: string,
+): Promise<ApiResponse<MemoryFileListItem[]>> {
+  return customFetch<ApiResponse<MemoryFileListItem[]>>(
+    `/api/v1/agents/${agentId}/files/memory`,
+    { method: "GET" },
+  );
+}
+
+export async function readMemoryFile(
+  agentId: string,
+  filename: string,
+): Promise<ApiResponse<MemoryFileRead>> {
+  return customFetch<ApiResponse<MemoryFileRead>>(
+    `/api/v1/agents/${agentId}/files/memory/${encodeURIComponent(filename)}`,
+    { method: "GET" },
+  );
+}
+
+// ── Shared docs (read-only) ──
+
+export async function listDocsFiles(
+  agentId: string,
+): Promise<ApiResponse<MemoryFileListItem[]>> {
+  return customFetch<ApiResponse<MemoryFileListItem[]>>(
+    `/api/v1/agents/${agentId}/files/docs`,
+    { method: "GET" },
+  );
+}
+
+export async function readDocsFile(
+  agentId: string,
+  filename: string,
+): Promise<ApiResponse<MemoryFileRead>> {
+  return customFetch<ApiResponse<MemoryFileRead>>(
+    `/api/v1/agents/${agentId}/files/docs/${encodeURIComponent(filename)}`,
+    { method: "GET" },
+  );
+}
+
 export async function writeAgentFile(
   agentId: string,
   filename: string,

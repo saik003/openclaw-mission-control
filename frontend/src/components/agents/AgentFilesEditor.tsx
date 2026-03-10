@@ -115,8 +115,9 @@ export function AgentFilesEditor({ agentId }: AgentFilesEditorProps) {
               type="button"
               onClick={() => void handleSave()}
               disabled={isSaving || !hasChanges}
+              aria-label="Save file"
               className={cn(
-                "rounded-lg px-3 py-1.5 text-xs font-semibold transition",
+                "rounded-lg px-3 py-1.5 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50 focus-visible:ring-offset-1",
                 hasChanges
                   ? "bg-slate-900 text-white hover:bg-slate-800"
                   : "bg-slate-100 text-slate-400 cursor-not-allowed",
@@ -144,8 +145,10 @@ export function AgentFilesEditor({ agentId }: AgentFilesEditorProps) {
               key={file.filename}
               type="button"
               onClick={() => void handleSelectFile(file.filename)}
+              aria-label={`Open file ${file.filename}`}
+              aria-pressed={selectedFile === file.filename}
               className={cn(
-                "flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition",
+                "flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50 focus-visible:ring-offset-1",
                 selectedFile === file.filename
                   ? "bg-slate-900 text-white"
                   : file.exists
@@ -172,7 +175,7 @@ export function AgentFilesEditor({ agentId }: AgentFilesEditorProps) {
               value={content}
               onChange={(e) => setContent(e.target.value)}
               disabled={isSaving}
-              className="h-96 w-full resize-y rounded-lg border border-slate-200 bg-white p-4 font-mono text-xs text-slate-800 shadow-sm transition focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200 disabled:opacity-50"
+              className="h-96 w-full resize-y rounded-lg border border-slate-200 bg-white p-4 font-mono text-xs text-slate-800 shadow-sm transition focus-visible:border-slate-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50 disabled:opacity-50"
               placeholder={`Write ${selectedFile} content here…`}
               spellCheck={false}
             />

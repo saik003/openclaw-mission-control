@@ -631,8 +631,9 @@ export function BoardApprovalsPanel({
                     key={approval.id}
                     type="button"
                     onClick={() => setSelectedId(approval.id)}
+                    aria-label={`Approval: ${primaryLabel}, ${formatStatusLabel(approval.status)}`}
                     className={cn(
-                      "w-full px-4 py-4 text-left transition hover:bg-slate-50",
+                      "w-full px-4 py-4 text-left transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50 focus-visible:ring-inset",
                       isSelected && "bg-amber-50 border-l-2 border-amber-500",
                       !isPending && "opacity-60",
                     )}
