@@ -85,6 +85,8 @@ class WorkerStatusRead(AgentWorkloadRead):
     pass
 
 
+import subprocess as _subprocess
+
 from pydantic import BaseModel as _BaseModel
 
 
@@ -96,38 +98,60 @@ class WorkerHealthRead(_BaseModel):
     total_failed: int
 
 
+class WorkerActionRead(_BaseModel):
+    ok: bool
+    message: str
+
+
+_SERVICE = "mc-job-worker.service"
+
+
+def _systemctl_status() -> tuple[bool, int | None]:
+    """Return (is_running, pid) for the worker service."""
+    try:
+        result = _subprocess.run(
+            ["systemctl", "--user", "is-active", _SERVICE],
+            capture_output=True, text=True, timeout=5,
+        )
+        is_running = result.stdout.strip() == "active"
+    except Exception:
+        return False, None
+
+    pid = None
+    if is_running:
+        try:
+            result = _subprocess.run(
+                ["systemctl", "--user", "show", _SERVICE, "--property=MainPID"],
+                capture_output=True, text=True, timeout=5,
+            )
+            pid_str = result.stdout.strip().split("=")[-1]
+            pid = int(pid_str) if pid_str.isdigit() and pid_str != "0" else None
+        except Exception:
+            pass
+    return is_running, pid
+
+
+def _systemctl_action(action: str) -> tuple[bool, str]:
+    """Run a systemctl action (start/stop/restart). Returns (ok, message)."""
+    try:
+        result = _subprocess.run(
+            ["systemctl", "--user", action, _SERVICE],
+            capture_output=True, text=True, timeout=10,
+        )
+        if result.returncode == 0:
+            return True, f"Worker {action} successful"
+        return False, result.stderr.strip() or f"systemctl {action} failed (code {result.returncode})"
+    except Exception as exc:
+        return False, str(exc)
+
+
 @router.get("/worker-health", response_model=WorkerHealthRead)
 async def get_worker_health(
     session: AsyncSession = SESSION_DEP,
     ctx: OrganizationContext = ORG_ADMIN_DEP,
 ) -> WorkerHealthRead:
     """Check if the job worker is running and return queue stats."""
-    import subprocess
-
-    try:
-        result = subprocess.run(
-            ["systemctl", "--user", "is-active", "mc-job-worker.service"],
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
-        is_running = result.stdout.strip() == "active"
-    except Exception:
-        is_running = False
-
-    pid = None
-    if is_running:
-        try:
-            result = subprocess.run(
-                ["systemctl", "--user", "show", "mc-job-worker.service", "--property=MainPID"],
-                capture_output=True,
-                text=True,
-                timeout=5,
-            )
-            pid_str = result.stdout.strip().split("=")[-1]
-            pid = int(pid_str) if pid_str.isdigit() and pid_str != "0" else None
-        except Exception:
-            pass
+    is_running, pid = _systemctl_status()
 
     from sqlmodel import func
 
@@ -149,3 +173,30 @@ async def get_worker_health(
         total_running=running_count,
         total_failed=failed_count,
     )
+
+
+@router.post("/worker/start", response_model=WorkerActionRead)
+async def start_worker(
+    ctx: OrganizationContext = ORG_ADMIN_DEP,
+) -> WorkerActionRead:
+    """Start the agent job worker service."""
+    ok, message = _systemctl_action("start")
+    return WorkerActionRead(ok=ok, message=message)
+
+
+@router.post("/worker/stop", response_model=WorkerActionRead)
+async def stop_worker(
+    ctx: OrganizationContext = ORG_ADMIN_DEP,
+) -> WorkerActionRead:
+    """Stop the agent job worker service."""
+    ok, message = _systemctl_action("stop")
+    return WorkerActionRead(ok=ok, message=message)
+
+
+@router.post("/worker/restart", response_model=WorkerActionRead)
+async def restart_worker(
+    ctx: OrganizationContext = ORG_ADMIN_DEP,
+) -> WorkerActionRead:
+    """Restart the agent job worker service."""
+    ok, message = _systemctl_action("restart")
+    return WorkerActionRead(ok=ok, message=message)

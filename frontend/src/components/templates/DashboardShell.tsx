@@ -15,6 +15,7 @@ import {
 import { BrandMark } from "@/components/atoms/BrandMark";
 import { OrgSwitcher } from "@/components/organisms/OrgSwitcher";
 import { UserMenu } from "@/components/organisms/UserMenu";
+import { WorkerStatusIndicator } from "@/components/organisms/WorkerStatusIndicator";
 import { isOnboardingComplete } from "@/lib/onboarding";
 
 export function DashboardShell({ children }: { children: ReactNode }) {
@@ -118,6 +119,7 @@ export function DashboardShell({ children }: { children: ReactNode }) {
           </SignedIn>
           <SignedIn>
             <div className="ml-auto flex min-w-0 shrink items-center gap-3 px-4 md:px-6 md:shrink-0">
+              <WorkerStatusIndicator />
               <div className="hidden text-right lg:block">
                 <p className="text-sm font-semibold text-slate-900">
                   {displayName}
