@@ -102,10 +102,10 @@ export function BoardMultiSelect({
             <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
           </Button>
         </PopoverTrigger>
-        <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+        <PopoverContent className="z-[100] w-[var(--radix-popover-trigger-width)] rounded-xl border border-slate-200 bg-white p-0 shadow-xl" align="start" sideOffset={4}>
           <Command>
             <CommandInput placeholder={searchPlaceholder} />
-            <CommandList>
+            <CommandList className="max-h-[300px]">
               <CommandEmpty>{emptyMessage}</CommandEmpty>
               <CommandGroup>
                 {options.map((option) => {
@@ -115,10 +115,11 @@ export function BoardMultiSelect({
                       key={option.value}
                       value={option.label}
                       onSelect={() => toggleBoard(option.value)}
+                      className="flex items-center gap-2 py-2.5 px-3"
                     >
                       <div
                         className={cn(
-                          "mr-2 flex h-4 w-4 items-center justify-center rounded border border-slate-300",
+                          "flex h-4 w-4 shrink-0 items-center justify-center rounded border border-slate-300",
                           isSelected
                             ? "border-blue-600 bg-blue-600 text-white"
                             : "opacity-50",
@@ -128,7 +129,7 @@ export function BoardMultiSelect({
                           <Check className="h-3 w-3" />
                         ) : null}
                       </div>
-                      <span className="flex-1">{option.label}</span>
+                      <span className="flex-1 truncate leading-normal">{option.label}</span>
                     </CommandItem>
                   );
                 })}

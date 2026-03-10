@@ -1375,6 +1375,8 @@ class AgentLifecycleService(OpenClawDBService):
         existing_links = await self.load_board_links(agent.id)
         for link in existing_links:
             await self.session.delete(link)
+        if existing_links:
+            await self.session.flush()
 
         # Determine primary
         if primary_board_id and primary_board_id in new_board_ids:

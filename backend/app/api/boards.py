@@ -29,6 +29,7 @@ from app.models.agents import Agent
 from app.models.board_groups import BoardGroup
 from app.models.boards import Board
 from app.models.gateways import Gateway
+from app.schemas.board_agents import BoardAgentsBatchPayload, BoardAgentsBatchResult
 from app.schemas.boards import BoardCreate, BoardRead, BoardUpdate
 from app.schemas.common import OkResponse
 from app.schemas.pagination import DefaultLimitOffsetPage
@@ -36,6 +37,7 @@ from app.schemas.view_models import BoardGroupSnapshot, BoardSnapshot
 from app.services.activity_log import record_activity
 from app.services.board_group_snapshot import build_board_group_snapshot
 from app.services.board_lifecycle import delete_board as delete_board_service
+from app.services.board_agents import add_agents_to_board, remove_agents_from_board
 from app.services.board_snapshot import build_board_snapshot
 from app.services.openclaw.gateway_dispatch import GatewayDispatchService
 from app.services.openclaw.gateway_rpc import GatewayConfig as GatewayClientConfig
@@ -645,6 +647,36 @@ async def update_board(
                 sorted(changed_fields),
             )
     return updated
+
+
+@router.post("/{board_id}/agents", response_model=BoardAgentsBatchResult)
+async def add_board_agents(
+    payload: BoardAgentsBatchPayload,
+    session: AsyncSession = SESSION_DEP,
+    board: Board = BOARD_USER_WRITE_DEP,
+) -> BoardAgentsBatchResult:
+    """Batch-add existing agents to a board."""
+    added, skipped = await add_agents_to_board(
+        session,
+        board_id=board.id,
+        agent_ids=payload.agent_ids,
+    )
+    return BoardAgentsBatchResult(added=added, skipped=skipped)
+
+
+@router.delete("/{board_id}/agents", response_model=BoardAgentsBatchResult)
+async def remove_board_agents(
+    payload: BoardAgentsBatchPayload,
+    session: AsyncSession = SESSION_DEP,
+    board: Board = BOARD_USER_WRITE_DEP,
+) -> BoardAgentsBatchResult:
+    """Batch-remove agents from a board."""
+    removed, skipped = await remove_agents_from_board(
+        session,
+        board_id=board.id,
+        agent_ids=payload.agent_ids,
+    )
+    return BoardAgentsBatchResult(removed=removed, skipped=skipped)
 
 
 @router.delete("/{board_id}", response_model=OkResponse)
