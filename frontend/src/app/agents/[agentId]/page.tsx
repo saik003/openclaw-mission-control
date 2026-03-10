@@ -304,6 +304,20 @@ export default function AgentDetailPage() {
                       </div>
                       <div>
                         <p className="text-xs font-semibold uppercase tracking-[0.2em] text-quiet">
+                          Model
+                        </p>
+                        <p className="mt-1">
+                          {agent.model ? (
+                            <span className="inline-flex items-center rounded-md bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700">
+                              {agent.model}
+                            </span>
+                          ) : (
+                            <span className="text-sm text-muted">—</span>
+                          )}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-quiet">
                           Updated
                         </p>
                         <p className="mt-1 text-sm text-muted">

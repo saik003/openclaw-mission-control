@@ -89,6 +89,7 @@ export default function EditAgentPage() {
   const agentId = Array.isArray(agentIdParam) ? agentIdParam[0] : agentIdParam;
 
   const [name, setName] = useState<string | undefined>(undefined);
+  const [model, setModel] = useState<string | undefined>(undefined);
   const [selectedBoardIds, setSelectedBoardIds] = useState<string[] | undefined>(undefined);
   const [primaryBoardId, setPrimaryBoardId] = useState<string | null | undefined>(undefined);
   const [isGatewayMain, setIsGatewayMain] = useState<boolean | undefined>(
@@ -178,6 +179,7 @@ export default function EditAgentPage() {
     error ?? agentQuery.error?.message ?? boardsQuery.error?.message ?? null;
 
   const resolvedName = name ?? loadedAgent?.name ?? "";
+  const resolvedModel = model ?? loadedAgent?.model ?? "";
   const resolvedIsGatewayMain =
     isGatewayMain ?? Boolean(loadedAgent?.is_gateway_main);
   const resolvedHeartbeatEvery = heartbeatEvery ?? loadedHeartbeat.every;
@@ -231,6 +233,7 @@ export default function EditAgentPage() {
 
     const payload: Record<string, unknown> = {
       name: trimmed,
+      model: resolvedModel || null,
       heartbeat_config: {
         ...existingHeartbeat,
         every: resolvedHeartbeatEvery.trim() || "10m",
@@ -310,6 +313,58 @@ export default function EditAgentPage() {
                 />
               </div>
             </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-slate-900">
+                Model
+              </label>
+              <Select
+                value={resolvedModel || "__none__"}
+                onValueChange={(value) =>
+                  setModel(value === "__none__" ? "" : value)
+                }
+                disabled={isLoading}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select model" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">No model set</SelectItem>
+                  {[
+                    "anthropic/claude-opus-4-6",
+                    "anthropic/claude-sonnet-4-20250514",
+                    "anthropic/claude-haiku-3-5",
+                    "openai/gpt-4o",
+                    "openai/gpt-4o-mini",
+                    "openai-codex/gpt-5.4",
+                    "google/gemini-2.5-pro",
+                    "google/gemini-2.5-flash",
+                  ].map((m) => (
+                    <SelectItem key={m} value={m}>
+                      {m}
+                    </SelectItem>
+                  ))}
+                  {resolvedModel &&
+                    ![
+                      "anthropic/claude-opus-4-6",
+                      "anthropic/claude-sonnet-4-20250514",
+                      "anthropic/claude-haiku-3-5",
+                      "openai/gpt-4o",
+                      "openai/gpt-4o-mini",
+                      "openai-codex/gpt-5.4",
+                      "google/gemini-2.5-pro",
+                      "google/gemini-2.5-flash",
+                    ].includes(resolvedModel) ? (
+                      <SelectItem value={resolvedModel}>
+                        {resolvedModel}
+                      </SelectItem>
+                    ) : null}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-slate-500">
+                LLM model this agent runs on.
+              </p>
+            </div>
+
             <div className="grid gap-6 md:grid-cols-2">
               <div className="space-y-2">
                 <label className="text-sm font-medium text-slate-900">
