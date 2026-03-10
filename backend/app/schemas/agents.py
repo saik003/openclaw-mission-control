@@ -96,6 +96,10 @@ class AgentBase(SQLModel):
         description="LLM model identifier this agent runs on (e.g. anthropic/claude-opus-4-6).",
         examples=["anthropic/claude-opus-4-6", "openai/gpt-4o"],
     )
+    parent_agent_id: UUID | None = Field(
+        default=None,
+        description="Parent agent UUID for hierarchy (reports-to relationship).",
+    )
     identity_template: str | None = Field(
         default=None,
         description="Template that helps define initial intent and behavior.",
@@ -226,6 +230,10 @@ class AgentUpdate(SQLModel):
         default=None,
         description="Optional replacement LLM model identifier.",
         examples=["anthropic/claude-opus-4-6"],
+    )
+    parent_agent_id: UUID | None = Field(
+        default=None,
+        description="Optional parent agent UUID for hierarchy.",
     )
     identity_template: str | None = Field(
         default=None,

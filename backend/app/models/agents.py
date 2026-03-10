@@ -39,6 +39,7 @@ class Agent(QueryModel, table=True):
         sa_column=Column(JSON),
     )
     model: str | None = Field(default=None, sa_column=Column(Text))
+    parent_agent_id: UUID | None = Field(default=None, foreign_key="agents.id", index=True)
     identity_template: str | None = Field(default=None, sa_column=Column(Text))
     soul_template: str | None = Field(default=None, sa_column=Column(Text))
     provision_requested_at: datetime | None = Field(default=None)

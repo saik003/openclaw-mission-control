@@ -31,6 +31,8 @@ export interface AgentRead {
   is_board_lead?: boolean;
   /** LLM model identifier this agent runs on. */
   model?: string | null;
+  /** Parent agent UUID for hierarchy (reports-to relationship). */
+  parent_agent_id?: string | null;
   /** Whether this agent is the primary gateway agent. */
   is_gateway_main?: boolean;
   /** Last heartbeat timestamp. */

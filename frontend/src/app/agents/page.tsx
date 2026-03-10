@@ -9,9 +9,11 @@ import { useAuth } from "@/auth/clerk";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { AgentsTable } from "@/components/agents/AgentsTable";
+import { AgentsHierarchy } from "@/components/agents/AgentsHierarchy";
 import { DashboardPageLayout } from "@/components/templates/DashboardPageLayout";
 import { Button } from "@/components/ui/button";
 import { ConfirmActionDialog } from "@/components/ui/confirm-action-dialog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 import { ApiError } from "@/api/mutator";
 import {
@@ -142,25 +144,38 @@ export default function AgentsPage() {
         adminOnlyMessage="Only organization owners and admins can access agents."
         stickyHeader
       >
-        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-          <AgentsTable
-            agents={agents}
-            boards={boards}
-            isLoading={agentsQuery.isLoading}
-            sorting={sorting}
-            onSortingChange={onSortingChange}
-            showActions
-            stickyHeader
-            onDelete={setDeleteTarget}
-            emptyState={{
-              title: "No agents yet",
-              description:
-                "Create your first agent to start executing tasks on this board.",
-              actionHref: "/agents/new",
-              actionLabel: "Create your first agent",
-            }}
-          />
-        </div>
+        <Tabs defaultValue="list">
+          <TabsList>
+            <TabsTrigger value="list">List</TabsTrigger>
+            <TabsTrigger value="hierarchy">Hierarchy</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="list">
+            <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+              <AgentsTable
+                agents={agents}
+                boards={boards}
+                isLoading={agentsQuery.isLoading}
+                sorting={sorting}
+                onSortingChange={onSortingChange}
+                showActions
+                stickyHeader
+                onDelete={setDeleteTarget}
+                emptyState={{
+                  title: "No agents yet",
+                  description:
+                    "Create your first agent to start executing tasks on this board.",
+                  actionHref: "/agents/new",
+                  actionLabel: "Create your first agent",
+                }}
+              />
+            </div>
+          </TabsContent>
+
+          <TabsContent value="hierarchy">
+            <AgentsHierarchy agents={agents} boards={boards} />
+          </TabsContent>
+        </Tabs>
 
         {agentsQuery.error ? (
           <p className="mt-4 text-sm text-red-500">

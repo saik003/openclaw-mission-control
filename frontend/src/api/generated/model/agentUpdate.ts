@@ -21,8 +21,12 @@ export interface AgentUpdate {
   identity_template?: string | null;
   /** Whether this agent is treated as the board gateway main. */
   is_gateway_main?: boolean | null;
+  /** Optional replacement LLM model identifier. */
+  model?: string | null;
   /** Optional replacement display name. */
   name?: string | null;
+  /** Parent agent UUID for hierarchy. */
+  parent_agent_id?: string | null;
   /** Optional replacement soul template. */
   soul_template?: string | null;
   /** Optional replacement lifecycle status. */

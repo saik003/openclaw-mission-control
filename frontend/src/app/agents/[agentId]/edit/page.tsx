@@ -10,7 +10,9 @@ import { useAuth } from "@/auth/clerk";
 import { ApiError } from "@/api/mutator";
 import {
   type getAgentApiV1AgentsAgentIdGetResponse,
+  type listAgentsApiV1AgentsGetResponse,
   useGetAgentApiV1AgentsAgentIdGet,
+  useListAgentsApiV1AgentsGet,
   useUpdateAgentApiV1AgentsAgentIdPatch,
 } from "@/api/generated/agents/agents";
 import {
@@ -90,6 +92,7 @@ export default function EditAgentPage() {
 
   const [name, setName] = useState<string | undefined>(undefined);
   const [model, setModel] = useState<string | undefined>(undefined);
+  const [parentAgentId, setParentAgentId] = useState<string | undefined>(undefined);
   const [selectedBoardIds, setSelectedBoardIds] = useState<string[] | undefined>(undefined);
   const [primaryBoardId, setPrimaryBoardId] = useState<string | null | undefined>(undefined);
   const [isGatewayMain, setIsGatewayMain] = useState<boolean | undefined>(
@@ -102,6 +105,22 @@ export default function EditAgentPage() {
     IdentityProfile | undefined
   >(undefined);
   const [error, setError] = useState<string | null>(null);
+
+  const allAgentsQuery = useListAgentsApiV1AgentsGet<
+    listAgentsApiV1AgentsGetResponse,
+    ApiError
+  >(undefined, {
+    query: {
+      enabled: Boolean(isSignedIn),
+      refetchOnMount: "always",
+      retry: false,
+    },
+  });
+
+  const allAgents = useMemo(() => {
+    if (allAgentsQuery.data?.status !== 200) return [];
+    return (allAgentsQuery.data.data.items ?? []).filter((a) => a.id !== agentId);
+  }, [allAgentsQuery.data, agentId]);
 
   const boardsQuery = useListBoardsApiV1BoardsGet<
     listBoardsApiV1BoardsGetResponse,
@@ -180,6 +199,7 @@ export default function EditAgentPage() {
 
   const resolvedName = name ?? loadedAgent?.name ?? "";
   const resolvedModel = model ?? loadedAgent?.model ?? "";
+  const resolvedParentAgentId = parentAgentId ?? loadedAgent?.parent_agent_id ?? "";
   const resolvedIsGatewayMain =
     isGatewayMain ?? Boolean(loadedAgent?.is_gateway_main);
   const resolvedHeartbeatEvery = heartbeatEvery ?? loadedHeartbeat.every;
@@ -234,6 +254,7 @@ export default function EditAgentPage() {
     const payload: Record<string, unknown> = {
       name: trimmed,
       model: resolvedModel || null,
+      parent_agent_id: resolvedParentAgentId || null,
       heartbeat_config: {
         ...existingHeartbeat,
         every: resolvedHeartbeatEvery.trim() || "10m",
@@ -362,6 +383,38 @@ export default function EditAgentPage() {
               </Select>
               <p className="text-xs text-slate-500">
                 LLM model this agent runs on.
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-slate-900">
+                Reports to
+              </label>
+              <Select
+                value={resolvedParentAgentId || "__none__"}
+                onValueChange={(value) =>
+                  setParentAgentId(value === "__none__" ? "" : value)
+                }
+                disabled={isLoading}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select parent agent" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">No parent (root agent)</SelectItem>
+                  {allAgents.map((a) => {
+                    const profile = a.identity_profile as Record<string, unknown> | undefined;
+                    const emoji = (typeof profile?.emoji === "string" ? profile.emoji : "") || "🤖";
+                    return (
+                      <SelectItem key={a.id} value={a.id}>
+                        {emoji} {a.name}
+                      </SelectItem>
+                    );
+                  })}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-slate-500">
+                Agent hierarchy — who this agent reports to.
               </p>
             </div>
 
